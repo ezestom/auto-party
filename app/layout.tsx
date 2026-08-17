@@ -21,9 +21,9 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "MIXR — DJ Console",
+  title: "EZE MIX — DJ Console",
   description:
-    "MIXR is a professional browser-based 2-deck DJ console with real-time audio mixing, BPM sync, key detection, and scratch interaction.",
+    "EZE MIX is a professional browser-based 2-deck DJ console with real-time audio mixing, BPM sync, key detection, and scratch interaction.",
 };
 
 export default function RootLayout({

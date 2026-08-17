@@ -19,7 +19,7 @@ export default function DJConsole() {
   const channelB = useMixerStore((s) => s.channels.B);
   const crossfader = useMixerStore((s) => s.crossfader);
 
-  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+  const [isLibraryOpen, setIsLibraryOpen] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
   const [clockTime, setClockTime] = useState("");
   const [isAudioReady, setIsAudioReady] = useState(false);
@@ -60,8 +60,8 @@ export default function DJConsole() {
       const playingA = deckA.isPlaying;
       const playingB = deckB.isPlaying;
 
-      // Target Intensity: 1.0 if any deck is playing, 0.0 if both paused
-      const targetIntensity = playingA || playingB ? 1.0 : 0.0;
+      // Target Intensity: 1.0 if any deck is playing, 0.55 (ambient laser glow) if both paused
+      const targetIntensity = playingA || playingB ? 1.0 : 0.55;
 
       // Calculate Target Color weights based on playing decks and crossfader/channel volume
       let weightA = 0;
@@ -93,6 +93,11 @@ export default function DJConsole() {
         targetR = normA * 1.0 + normB * 0.0;
         targetG = normA * 0.42 + normB * 0.83;
         targetB = normA * 0.0 + normB * 1.0;
+      } else {
+        // Idle ambient color: warm vibrant orange/gold [1.0, 0.42, 0.0]
+        targetR = 1.0;
+        targetG = 0.42;
+        targetB = 0.0;
       }
 
       // Linear interpolation (Lerp) for smooth fade in/out and subtle color morphing
@@ -186,7 +191,7 @@ export default function DJConsole() {
         const now = new Date();
         const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
         const timeStr = now.toTimeString().slice(0, 8).replace(/:/g, "");
-        const filename = `mixr-mix-${dateStr}-${timeStr}.wav`;
+        const filename = `ezemix-mix-${dateStr}-${timeStr}.wav`;
         
         const url = URL.createObjectURL(wavBlob);
         const a = document.createElement("a");
@@ -210,34 +215,36 @@ export default function DJConsole() {
 
   return (
     <Laser
-      speed={0.35}
-      offset={36}
+      speed={0.4}
+      offset={isLibraryOpen ? 276 : 36}
       color={laserColor}
-      thickness={7 * laserIntensity}
-      core={1.3 * laserIntensity}
-      radius={26 * laserIntensity}
-      glow={2.4 * laserIntensity}
-      wave={12 * laserIntensity}
-      width={0.68}
-      flicker={0.25 * laserIntensity}
-      reveal={360 * laserIntensity}
-      heat={1.4 * laserIntensity}
-      shimmer={12 * laserIntensity}
+      thickness={8 * laserIntensity}
+      core={1.5 * laserIntensity}
+      radius={28 * laserIntensity}
+      glow={2.8 * laserIntensity}
+      wave={14 * laserIntensity}
+      width={0.8}
+      flicker={0.2 * laserIntensity}
+      reveal={380 * laserIntensity}
+      heat={1.5 * laserIntensity}
+      shimmer={14 * laserIntensity}
       sparkle={0.35 * laserIntensity}
-      reactivity={1.2}
+      reactivity={1.3}
       className="w-full h-full"
     >
       {/*
-       * Root: full-viewport grid with 3 rows
-       *   row 1 = header bar (50px fixed)
-       *   row 2 = console content (fills remaining space, overflow hidden)
-       *   row 3 = status bar (36px fixed)
+       * Root: full-viewport grid with 4 rows
+       *   row 1 = header bar (46px fixed)
+       *   row 2 = console content (Decks & Mixer)
+       *   row 3 = embedded music library panel (240px / 1/4 screen)
+       *   row 4 = status bar (30px fixed)
        */}
       <div
-        className="select-none font-sans"
+        className="select-none font-sans transition-[grid-template-rows] duration-300 ease-in-out"
         style={{
           display: "grid",
-          gridTemplateRows: "50px 1fr 36px",
+          gridTemplateRows: isLibraryOpen ? "46px minmax(0, 1fr) 240px 30px" : "46px minmax(0, 1fr) 0px 30px",
+          transition: "grid-template-rows 300ms cubic-bezier(0.4, 0, 0.2, 1)",
           height: "100dvh",
           maxHeight: "100dvh",
           overflow: "hidden",
@@ -257,23 +264,21 @@ export default function DJConsole() {
         >
           {/* Brand */}
           <div className="flex items-center gap-3 shrink-0">
-            <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center font-mono text-[13px] font-black text-black relative shadow-lg"
-              style={{
-                background: "linear-gradient(135deg, #ff6b00, #ff9500)",
-                boxShadow: "0 0 18px rgba(255,107,0,0.55)",
-              }}
-            >
-              M
+            <div className="relative flex items-center justify-center">
+              <img
+                src="/e_logo_music.png"
+                alt="EZE MIX Logo"
+                className="w-9 h-9 object-contain drop-shadow-[0_0_12px_rgba(255,165,0,0.45)]"
+              />
               {anyPlaying && (
                 <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#00ff88] animate-pulse shadow-[0_0_8px_#00ff88]" />
               )}
             </div>
             <div className="leading-none">
               <div className="font-mono text-[16px] font-black tracking-[3px] text-white flex items-center gap-1.5">
-                MIXR <span className="text-[10px] text-[#ff6b00] tracking-widest font-mono">PRO</span>
+                EZE MIX <span className="text-[10px] text-[#ff6b00] tracking-widest font-mono">PRO</span>
               </div>
-              <div className="font-mono text-[7.5px] text-text-muted tracking-widest uppercase mt-0.5">DJ CONSOLE PRO v2.0</div>
+              <div className="font-mono text-[7.5px] text-text-muted tracking-widest uppercase mt-0.5">EZE MIX DJ CONSOLE v2.0</div>
             </div>
           </div>
 
@@ -343,27 +348,34 @@ export default function DJConsole() {
             ROW 2 — CONSOLE CONTENT
         ══════════════════════════════ */}
         <main
-          className="overflow-x-hidden overflow-y-auto flex items-stretch gap-2 px-2 py-2 min-w-0"
+          className="overflow-x-hidden overflow-y-auto flex items-stretch gap-2 px-2 py-1.5 min-w-0"
           style={{ minHeight: 0 }}
         >
           {/* Deck A */}
           <div className="flex-1 min-w-[280px] overflow-hidden">
-            <DeckPanel deckId="A" color="#ff6b00" />
+            <DeckPanel deckId="A" color="#ff6b00" isLibraryOpen={isLibraryOpen} />
           </div>
 
           {/* Mixer Center */}
           <div className="shrink-0 overflow-hidden min-w-[180px]">
-            <MixerCenter />
+            <MixerCenter isLibraryOpen={isLibraryOpen} />
           </div>
 
           {/* Deck B */}
           <div className="flex-1 min-w-[280px] overflow-hidden">
-            <DeckPanel deckId="B" color="#00d4ff" />
+            <DeckPanel deckId="B" color="#00d4ff" isLibraryOpen={isLibraryOpen} />
           </div>
         </main>
 
         {/* ══════════════════════════════
-            ROW 3 — STATUS BAR
+            ROW 3 — EMBEDDED SONG LIBRARY
+        ══════════════════════════════ */}
+        <div className="overflow-hidden min-h-0">
+          <LibraryPanel isOpen={isLibraryOpen} onClose={() => setIsLibraryOpen(false)} />
+        </div>
+
+        {/* ══════════════════════════════
+            ROW 4 — STATUS BAR
         ══════════════════════════════ */}
         <footer
           style={{
@@ -402,9 +414,6 @@ export default function DJConsole() {
             </div>
           </div>
         </footer>
-
-        {/* Library Sidebar */}
-        <LibraryPanel isOpen={isLibraryOpen} onClose={() => setIsLibraryOpen(false)} />
       </div>
     </Laser>
   );

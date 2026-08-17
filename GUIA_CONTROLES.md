@@ -1,4 +1,4 @@
-# 🎛️ Guía Rápida de Controles — MIXR PRO DJ Console
+# 🎛️ Guía Rápida de Controles — EZE MIX PRO DJ Console
 
 Resumen directo y al grano para aprender a usar cada botón y control de la consola.
 

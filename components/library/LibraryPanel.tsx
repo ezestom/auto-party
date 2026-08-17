@@ -182,16 +182,13 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
 
   return (
     <div
-      id="library-drawer"
-      style={{
-        boxShadow: isOpen ? "-10px 0 30px rgba(0,0,0,0.7)" : "none",
-      }}
+      id="library-bottom-panel"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`fixed top-0 right-0 bottom-0 h-full w-95 bg-[#0a0a0c]/98 border-l border-border-custom z-40 transition-transform duration-300 ease-in-out transform ${
-        isOpen ? "translate-x-0" : "translate-x-full"
-      } flex flex-col p-4 backdrop-blur-2xl select-none`}
+      className={`relative w-full h-full bg-[#08080d] border-t border-[#1e1e30] z-20 flex flex-col px-4 py-2 select-none min-h-0 overflow-hidden transition-all duration-300 ease-in-out ${
+        isOpen ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-3 pointer-events-none"
+      }`}
     >
       {/* Hidden inputs */}
       {mounted && (
@@ -218,102 +215,109 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
         </>
       )}
 
-      {/* Header bar */}
-      <div className="flex items-center justify-between pb-3 border-b border-border-custom mb-3">
-        <div className="flex items-center gap-2">
-          <ListFilter size={13} className="text-orange" />
-          <span className="font-mono text-[9px] font-bold tracking-widest text-white uppercase">
-            Music Library
+      {/* Header bar / Toolbar */}
+      <div className="flex items-center justify-between gap-3 pb-2 border-b border-[#1e1e2c] mb-1.5 shrink-0">
+        {/* Left: Brand title & Track count */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          <ListFilter size={14} className="text-[#ff6b00]" />
+          <span className="font-mono text-[10px] font-black tracking-widest text-white uppercase">
+            MUSIC LIBRARY
+          </span>
+          <span className="font-mono text-[9px] px-2 py-0.5 rounded-full bg-[#161622] border border-[#252538] text-[#8888a8]">
+            {tracks.length} tracks
           </span>
         </div>
 
-        {/* Close Button */}
-        <button
-          id="library-close-btn"
-          onClick={onClose}
-          className="text-text-muted hover:text-white transition-colors cursor-pointer"
-        >
-          <X size={15} />
-        </button>
-      </div>
+        {/* Middle: Search input & Import controls */}
+        <div className="flex items-center gap-2 flex-1 max-w-xl">
+          <div className="relative flex-1 flex items-center">
+            <Search size={12} className="absolute left-2.5 text-[#777790] pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search track, artist, key, bpm..."
+              className="w-full pl-7 pr-3 py-1 bg-[#121218] border border-[#222234] rounded-md font-mono text-[9.5px] text-white outline-none focus:border-[#ff6b00] transition-colors"
+            />
+          </div>
+          <button
+            onClick={handleDirectoryScan}
+            className="flex items-center gap-1.5 px-2.5 py-1 bg-[#121218] border border-[#222234] rounded-md font-mono text-[8.5px] text-[#9999b5] hover:text-white hover:border-[#ff6b00] transition-all cursor-pointer font-extrabold uppercase tracking-wider shrink-0"
+          >
+            <FolderOpen size={11} className="text-[#ff6b00]" />
+            Folder
+          </button>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-1.5 px-2.5 py-1 bg-[#121218] border border-[#222234] rounded-md font-mono text-[8.5px] text-[#9999b5] hover:text-white hover:border-[#00d4ff] transition-all cursor-pointer font-extrabold uppercase tracking-wider shrink-0"
+          >
+            <Upload size={11} className="text-[#00d4ff]" />
+            Files
+          </button>
+        </div>
 
-      {/* Import Controls */}
-      <div className="grid grid-cols-2 gap-2 mb-3">
-        <button
-          onClick={handleDirectoryScan}
-          className="flex items-center justify-center gap-1.5 py-1.5 bg-[#121216] border border-[#252535] rounded font-mono text-[8px] text-text-dim hover:text-white hover:border-orange hover:bg-orange/5 transition-all cursor-pointer font-bold uppercase tracking-wider"
-        >
-          <FolderOpen size={10} className="text-orange" />
-          Import Folder
-        </button>
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          className="flex items-center justify-center gap-1.5 py-1.5 bg-[#121216] border border-[#252535] rounded font-mono text-[8px] text-text-dim hover:text-white hover:border-cyan hover:bg-cyan/5 transition-all cursor-pointer font-bold uppercase tracking-wider"
-        >
-          <Upload size={10} className="text-cyan-custom" />
-          Import Files
-        </button>
-      </div>
-
-      {/* Search Bar */}
-      <div className="relative flex items-center mb-3">
-        <Search size={12} className="absolute left-2.5 text-text-muted pointer-events-none" />
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search track, artist..."
-          className="w-full pl-7 pr-3 py-1.5 bg-[#121216] border border-border-custom rounded font-mono text-[10px] text-white outline-none focus:border-orange transition-colors"
-        />
+        {/* Right: Close/Minimize button */}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            id="library-close-btn"
+            onClick={onClose}
+            className="p-1 text-[#777790] hover:text-white transition-colors cursor-pointer rounded hover:bg-white/5"
+            title="Minimize Library"
+          >
+            <X size={15} />
+          </button>
+        </div>
       </div>
 
       {/* Table grid headers / Sort buttons */}
-      <div className="flex items-center justify-between font-mono text-[7.5px] text-text-muted tracking-wider pb-1 border-b border-[#202028] uppercase mb-1">
+      <div className="grid grid-cols-12 gap-2 items-center font-mono text-[8px] font-extrabold text-[#777795] tracking-wider pb-1 border-b border-[#1c1c28] uppercase shrink-0 px-3 select-none">
+        <div className="col-span-1">#</div>
         <div
           onClick={() => setSort("title")}
-          className="flex items-center gap-0.5 cursor-pointer hover:text-white transition-colors"
+          className="col-span-4 flex items-center gap-1 cursor-pointer hover:text-white transition-colors"
         >
-          Track Title {sortField === "title" && <ArrowUpDown size={7} />}
+          TITLE {sortField === "title" && <ArrowUpDown size={8} />}
         </div>
-        <div className="flex gap-3">
-          <div
-            onClick={() => setSort("key")}
-            className="flex items-center gap-0.5 cursor-pointer hover:text-white transition-colors"
-          >
-            Key {sortField === "key" && <ArrowUpDown size={7} />}
-          </div>
-          <div
-            onClick={() => setSort("bpm")}
-            className="flex items-center gap-0.5 cursor-pointer hover:text-white transition-colors"
-          >
-            BPM {sortField === "bpm" && <ArrowUpDown size={7} />}
-          </div>
+        <div className="col-span-3">ARTIST</div>
+        <div
+          onClick={() => setSort("bpm")}
+          className="col-span-1 text-center flex items-center justify-center gap-1 cursor-pointer hover:text-white transition-colors"
+        >
+          BPM {sortField === "bpm" && <ArrowUpDown size={8} />}
         </div>
+        <div
+          onClick={() => setSort("key")}
+          className="col-span-1 text-center flex items-center justify-center gap-1 cursor-pointer hover:text-white transition-colors"
+        >
+          KEY {sortField === "key" && <ArrowUpDown size={8} />}
+        </div>
+        <div className="col-span-1 text-center">TIME</div>
+        <div className="col-span-1 text-right">LOAD</div>
       </div>
 
-      {/* Drag & Drop Visual overlay state */}
-      <div className="flex-1 min-h-0 relative flex flex-col">
+      {/* Drag & Drop Visual overlay state & Table Body */}
+      <div className="flex-1 min-h-0 relative flex flex-col overflow-hidden mt-0.5">
         {isDragging && (
-          <div className="absolute inset-0 bg-[#0f0f16]/90 border-2 border-dashed border-orange rounded-md flex flex-col items-center justify-center gap-2 z-30 transition-all pointer-events-none">
-            <Upload size={24} className="text-orange animate-bounce" />
+          <div className="absolute inset-0 bg-[#0f0f16]/95 border-2 border-dashed border-[#ff6b00] rounded-md flex flex-col items-center justify-center gap-2 z-30 transition-all pointer-events-none">
+            <Upload size={24} className="text-[#ff6b00] animate-bounce" />
             <span className="font-mono text-[10px] text-white tracking-widest uppercase">
-              Drop audio files here
+              Drop audio files here to import into library
             </span>
           </div>
         )}
 
         {/* Scrollable track list */}
-        <div className="flex-1 overflow-y-auto divide-y divide-[#1e1e26] pr-1">
-          {tracks.map((track) => (
+        <div className="flex-1 overflow-y-auto divide-y divide-[#181824] pr-1">
+          {tracks.map((track, i) => (
             <div key={track.id} className="relative group">
-              <LibraryRow track={track} />
+              <LibraryRow track={track} index={i} />
               {/* Optional Delete Track button on hover */}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   deleteTrack(track.id);
                 }}
-                className="absolute right-28 top-3.5 opacity-0 group-hover:opacity-100 text-text-muted hover:text-red transition-all cursor-pointer p-0.5 rounded hover:bg-white/5"
+                className="absolute right-20 top-2 opacity-0 group-hover:opacity-100 text-[#777790] hover:text-red-custom transition-all cursor-pointer p-1 rounded hover:bg-white/10 z-10"
                 title="Delete Track"
               >
                 <Trash2 size={11} />
@@ -321,37 +325,26 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
             </div>
           ))}
           {tracks.length === 0 && (
-            <div className="py-12 text-center text-text-muted font-mono text-[10px]">
+            <div className="py-8 text-center text-[#777790] font-mono text-[10px]">
               {searchQuery ? `No tracks found matching "${searchQuery}"` : "Library is empty. Drag & drop files or click import buttons above."}
             </div>
           )}
         </div>
       </div>
 
-      {/* Info Footer */}
-      <div className="pt-3 border-t border-border-custom mt-auto flex flex-col gap-1 text-text-muted font-mono text-[7.5px] leading-tight">
-        <div className="flex justify-between">
-          <span>{tracks.length} tracks registered</span>
-          <span>Click headers to sort</span>
-        </div>
-        <div className="text-center text-[7px] text-[#ff6b00]/80 mt-1 uppercase tracking-wider">
-          One-click orange/cyan buttons load to decks
-        </div>
-      </div>
-
       {/* Importing Progress Overlay */}
       {importStatus.active && (
-        <div className="absolute inset-0 bg-[#06060a]/90 backdrop-blur-md flex flex-col items-center justify-center p-6 z-50 animate-fade-in">
-          <Loader2 size={32} className="text-orange animate-spin mb-4" />
-          <span className="font-mono text-[11px] font-black text-white uppercase tracking-widest mb-1.5">
+        <div className="absolute inset-0 bg-[#06060a]/95 backdrop-blur-md flex flex-col items-center justify-center p-6 z-50 animate-fade-in">
+          <Loader2 size={28} className="text-[#ff6b00] animate-spin mb-3" />
+          <span className="font-mono text-[11px] font-black text-white uppercase tracking-widest mb-1">
             Analyzing Audio
           </span>
-          <span className="font-mono text-[9px] text-[#8888a8] uppercase tracking-wider mb-4">
+          <span className="font-mono text-[9px] text-[#8888a8] uppercase tracking-wider mb-3">
             Processing Track {importStatus.current} of {importStatus.total}
           </span>
-          <div className="w-full bg-[#1c1c28] h-1.5 rounded-full overflow-hidden max-w-50 mb-3 border border-white/5">
+          <div className="w-full bg-[#1c1c28] h-1.5 rounded-full overflow-hidden max-w-48 mb-2 border border-white/5">
             <div
-              className="bg-orange h-full rounded-full transition-all duration-200"
+              className="bg-[#ff6b00] h-full rounded-full transition-all duration-200"
               style={{ width: `${(importStatus.current / importStatus.total) * 100}%` }}
             />
           </div>

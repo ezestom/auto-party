@@ -9,10 +9,12 @@ import Fader from "../ui/Fader";
 import Waveform from "./Waveform";
 import { db } from "../../lib/db/dexie";
 import { getAudioEngine } from "../../lib/audio/AudioEngine";
+import { RotateCcw } from "lucide-react";
 
 interface DeckPanelProps {
   deckId: "A" | "B";
   color: string;
+  isLibraryOpen?: boolean;
 }
 
 const PAD_MODES = ["HOT CUE", "LOOP", "ROLL", "SLICER", "SAMPLER", "BEAT JMP"] as const;
@@ -21,7 +23,7 @@ type PadMode = (typeof PAD_MODES)[number];
 const PAD_COLORS_A = ["#ff6b00", "#ff9500", "#ffcc00", "#ff6b00", "#ff9500", "#ffcc00", "#ff6b00", "#ff9500"];
 const PAD_COLORS_B = ["#00d4ff", "#00aaff", "#0077ff", "#00d4ff", "#00aaff", "#0077ff", "#00d4ff", "#00aaff"];
 
-export default function DeckPanel({ deckId, color }: DeckPanelProps) {
+export default function DeckPanel({ deckId, color, isLibraryOpen = true }: DeckPanelProps) {
   const deck = useDeckStore((s) => s.decks[deckId]);
   const { setTempoOffset } = useDeckStore();
   const channel = useMixerStore((s) => s.channels[deckId]);
@@ -38,6 +40,13 @@ export default function DeckPanel({ deckId, color }: DeckPanelProps) {
   };
 
   const tempoStr = (deck.tempoOffset >= 0 ? "+" : "") + (deck.tempoOffset * 100).toFixed(1) + "%";
+
+  const jogSize = isLibraryOpen ? 210 : 290;
+  const faderLen = isLibraryOpen ? 130 : 190;
+
+  const resetTempo = () => {
+    setTempoOffset(deckId, 0.0);
+  };
 
   return (
     <div
@@ -185,12 +194,12 @@ export default function DeckPanel({ deckId, color }: DeckPanelProps) {
       </div>
 
       {/* ── WAVEFORM ── */}
-      <div className="w-full shrink-0">
+      <div className="w-full shrink-0 my-1">
         <Waveform deckId={deckId} color={color} />
       </div>
 
       {/* ── PROGRESS SEGMENTS ── */}
-      <div className="flex gap-0.5 px-3 py-1 shrink-0">
+      <div className="flex gap-0.5 px-3.5 py-1 shrink-0">
         {Array.from({ length: 48 }).map((_, i) => {
           const active = i / 48 < deck.progress;
           const isCue = i % 16 === 0 && i > 0;
@@ -199,7 +208,7 @@ export default function DeckPanel({ deckId, color }: DeckPanelProps) {
               key={i}
               className="flex-1 rounded-sm transition-all duration-100"
               style={{
-                height: isCue ? 4.5 : 3,
+                height: isCue ? 6 : 4,
                 backgroundColor: isCue ? (active ? "#ffd600" : "#2e2e42") : active ? color : "#1e1e2e",
                 boxShadow: active ? `0 0 4px ${isCue ? "#ffd600" : color}90` : "none",
               }}
@@ -210,7 +219,7 @@ export default function DeckPanel({ deckId, color }: DeckPanelProps) {
 
       {/* ── PLATTER AREA (RESPONSIVE FLEX AREA — NO OVERLAP AT ANY ZOOM LEVEL) ── */}
       <div
-        className={`flex items-center gap-2 px-2.5 min-h-0 flex-1 overflow-hidden ${isLeft ? "flex-row" : "flex-row-reverse"}`}
+        className={`flex items-center gap-3 px-3 min-h-0 flex-1 overflow-hidden transition-all duration-300 py-1 ${isLeft ? "flex-row" : "flex-row-reverse"}`}
       >
         {/* Tempo fader */}
         <div className="flex flex-col items-center gap-1.5 w-11 shrink-0 h-full max-h-full justify-center py-0.5 overflow-hidden">
@@ -219,33 +228,37 @@ export default function DeckPanel({ deckId, color }: DeckPanelProps) {
               value={(deck.tempoOffset + 0.16) / 0.32}
               onChange={(val) => setTempoOffset(deckId, -0.16 + val * 0.32)}
               vertical
-              length={200}
+              length={faderLen}
               color={color}
               label="Tempo"
+              defaultValue={0.5}
             />
           </div>
-          <span
-            className="font-mono text-[8px] font-black px-1 py-0.5 border rounded-md text-center w-full shadow-sm shrink-0"
+          <button
+            onClick={resetTempo}
+            title="Click to reset pitch offset to 0.0%"
+            className="font-mono text-[8px] font-black px-1 py-0.5 border rounded-md text-center w-full shadow-sm shrink-0 hover:bg-white/10 transition-all cursor-pointer flex items-center justify-center gap-0.5"
             style={{ color, backgroundColor: `${color}18`, borderColor: `${color}45` }}
           >
             {tempoStr}
-          </span>
+            <RotateCcw size={7} className="opacity-70" />
+          </button>
         </div>
 
         {/* Jog wheel — RESPONSIVE ASPECT SQUARE (SCALES FLUIDLY TO AVAILABLE SPACE) */}
-        <div className="flex-1 flex items-center justify-center min-w-0 h-full max-h-full py-0.5 overflow-hidden">
-          <JogWheel deckId={deckId} color={color} size={280} />
+        <div className="flex-1 flex items-center justify-center min-w-0 h-full max-h-full py-0.5 overflow-hidden transition-all duration-300">
+          <JogWheel deckId={deckId} color={color} size={jogSize} />
         </div>
 
         {/* EQ & Volume Faders group */}
         <div className={`flex items-center gap-2 shrink-0 h-full max-h-full overflow-hidden ${isLeft ? "flex-row" : "flex-row-reverse"}`}>
           {/* Linear EQ & Filter Faders Panel */}
-          <div className="flex items-center gap-1.5 shrink-0 justify-center py-1 px-2.5 bg-black/40 rounded-xl border border-[#252538] shadow-inner h-full max-h-full overflow-hidden min-w-0">
-            <Fader value={channel.gain} onChange={(v) => setChannelGain(deckId, v)} label="Gain" color={color} vertical length={200} defaultValue={0.5} />
-            <Fader value={channel.eqHi} onChange={(v) => setEQHi(deckId, v)} label="Hi" color={color} vertical length={200} center defaultValue={0.75} />
-            <Fader value={channel.eqMid} onChange={(v) => setEQMid(deckId, v)} label="Mid" color={color} vertical length={200} center defaultValue={0.75} />
-            <Fader value={channel.eqLo} onChange={(v) => setEQLo(deckId, v)} label="Low" color={color} vertical length={200} center defaultValue={0.75} />
-            <Fader value={channel.filter} onChange={(v) => setFilter(deckId, v)} label="Filter" color="#ff0055" vertical length={200} center defaultValue={0.5} />
+          <div className="flex items-center gap-1.5 shrink-0 justify-center py-1.5 px-3 bg-black/40 rounded-xl border border-[#252538] shadow-inner h-full max-h-full overflow-hidden min-w-0">
+            <Fader value={channel.gain} onChange={(v) => setChannelGain(deckId, v)} label="Gain" color={color} vertical length={faderLen} defaultValue={0.5} />
+            <Fader value={channel.eqHi} onChange={(v) => setEQHi(deckId, v)} label="Hi" color={color} vertical length={faderLen} center defaultValue={0.75} />
+            <Fader value={channel.eqMid} onChange={(v) => setEQMid(deckId, v)} label="Mid" color={color} vertical length={faderLen} center defaultValue={0.75} />
+            <Fader value={channel.eqLo} onChange={(v) => setEQLo(deckId, v)} label="Low" color={color} vertical length={faderLen} center defaultValue={0.75} />
+            <Fader value={channel.filter} onChange={(v) => setFilter(deckId, v)} label="Filter" color="#ff0055" vertical length={faderLen} center defaultValue={0.5} />
           </div>
 
           {/* Channel Volume fader column */}
@@ -255,7 +268,7 @@ export default function DeckPanel({ deckId, color }: DeckPanelProps) {
                 value={channel.volume}
                 onChange={(v) => setChannelVolume(deckId, v)}
                 vertical
-                length={200}
+                length={faderLen}
                 color={color}
                 label={`CH ${deckId}`}
               />
@@ -301,9 +314,9 @@ export default function DeckPanel({ deckId, color }: DeckPanelProps) {
           })}
         </div>
 
-        {/* ── 4×2 PERFORMANCE PADS ── */}
+        {/* ── 1×4 PERFORMANCE PADS ── */}
         <div className="grid grid-cols-4 gap-1.5">
-          {Array.from({ length: 8 }).map((_, i) => {
+          {Array.from({ length: 4 }).map((_, i) => {
             const isPressed = pressedPad === i;
             const padColors = deckId === "A" ? PAD_COLORS_A : PAD_COLORS_B;
             const padColor = padColors[i];

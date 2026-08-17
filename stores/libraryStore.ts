@@ -26,7 +26,7 @@ interface LibraryStore {
   loadTracksFromDb: () => Promise<void>;
   setSearchQuery: (query: string) => Promise<void>;
   setSort: (field: SortField) => Promise<void>;
-  importTrack: (file: File) => Promise<void>;
+  importTrack: (file: File) => Promise<DbTrack>;
   deleteTrack: (trackId: string) => Promise<void>;
   togglePrepCrate: (trackId: string) => void;
   addToHistory: (trackId: string) => void;
@@ -203,6 +203,7 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
 
       await db.tracks.put(dbTrack);
       await get().loadTracksFromDb();
+      return dbTrack;
     } catch (err) {
       console.error("Failed to import track:", err);
       throw err;

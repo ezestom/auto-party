@@ -4,9 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import Fader from "../ui/Fader";
 import { useMixerStore } from "../../stores/mixerStore";
 import { useDeckStore } from "../../stores/deckStore";
-import { Zap } from "lucide-react";
+import { Zap, RotateCcw } from "lucide-react";
 
-export default function MixerCenter() {
+interface MixerCenterProps {
+  isLibraryOpen?: boolean;
+}
+
+export default function MixerCenter({ isLibraryOpen = true }: MixerCenterProps) {
   const {
     crossfader, masterVolume, headphoneVolume, headphoneMix, boothVolume,
     channels, setCrossfader, setMasterVolume, setHeadphoneVolume,
@@ -27,6 +31,9 @@ export default function MixerCenter() {
   const lastAnimTimeRef = useRef(performance.now());
   const animFrameRef = useRef<number | null>(null);
 
+  const faderHeight = isLibraryOpen ? 110 : 160;
+  const faderLen = isLibraryOpen ? 95 : 140;
+
   // 60FPS Auto-Crossfade Interpolation Animation Loop
   useEffect(() => {
     if (!isAutoCrossfading || !autoTarget) return;
@@ -38,27 +45,28 @@ export default function MixerCenter() {
       const dt = Math.min((now - lastAnimTimeRef.current) / 1000, 0.1);
       lastAnimTimeRef.current = now;
 
-      const targetVal = autoTarget === "A" ? 0.0 : 1.0;
-      const speed = 1.0 / Math.max(0.5, autoDuration); // Units per second
-      const direction = targetVal > crossfader ? 1 : -1;
+      const currentCross = useMixerStore.getState().crossfader;
+      const targetCross = autoTarget === "A" ? 0.0 : 1.0;
+      const speed = 1 / Math.max(0.5, autoDuration);
 
-      const delta = direction * speed * dt;
-      const nextVal = crossfader + delta;
-
-      if ((direction === 1 && nextVal >= 1.0) || (direction === -1 && nextVal <= 0.0)) {
-        setCrossfader(targetVal);
+      if (Math.abs(currentCross - targetCross) < 0.005) {
+        setCrossfader(targetCross);
         stopAutoCrossfade();
-      } else {
-        setCrossfader(nextVal);
-        animFrameRef.current = requestAnimationFrame(stepAutoCrossfade);
+        return;
       }
+
+      const direction = autoTarget === "A" ? -1 : 1;
+      const nextVal = Math.max(0, Math.min(1, currentCross + direction * speed * dt));
+      setCrossfader(nextVal);
+
+      animFrameRef.current = requestAnimationFrame(stepAutoCrossfade);
     };
 
     animFrameRef.current = requestAnimationFrame(stepAutoCrossfade);
     return () => {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     };
-  }, [isAutoCrossfading, autoTarget, autoDuration, crossfader, setCrossfader, stopAutoCrossfade]);
+  }, [isAutoCrossfading, autoTarget, autoDuration, setCrossfader, stopAutoCrossfade]);
 
   const handleManualCrossfader = (val: number) => {
     if (isAutoCrossfading) stopAutoCrossfade();
@@ -66,7 +74,7 @@ export default function MixerCenter() {
   };
 
   const FX_LIST = ["ECHO", "REVERB", "FLNGR", "FILTER", "CRUSH"];
-  const crossColor = crossfader < 0.45 ? "#ff6b00" : crossfader > 0.55 ? "#00d4ff" : "#ffd600";
+  const crossColor = crossfader < 0.45 ? "#ff6b00" : crossfader > 0.55 ? "#00d4ff" : "#ffffff";
 
   return (
     <div
@@ -90,12 +98,12 @@ export default function MixerCenter() {
       </div>
 
       {/* Master faders + VU */}
-      <div className="flex gap-3.5 items-center justify-center px-3.5 pt-3 pb-2 shrink-0" style={{ height: 160 }}>
+      <div className="flex gap-3.5 items-center justify-center px-3.5 pt-2 pb-1 shrink-0 transition-all duration-300" style={{ height: faderHeight }}>
         <div className="flex flex-col items-center gap-1 h-full">
-          <Fader value={masterVolume} onChange={setMasterVolume} vertical length={140} color="#ff6b00" label="Mst" />
+          <Fader value={masterVolume} onChange={setMasterVolume} vertical length={faderLen} color="#ff6b00" label="Mst" defaultValue={1.0} />
         </div>
         <div className="flex flex-col items-center gap-1 h-full">
-          <Fader value={headphoneMix} onChange={setHeadphoneMix} vertical length={140} color="#9999b5" label="PFL" />
+          <Fader value={headphoneMix} onChange={setHeadphoneMix} vertical length={faderLen} color="#9999b5" label="PFL" defaultValue={0.5} />
         </div>
         {/* VU meter */}
         <div className="flex gap-2 items-end justify-center px-1 h-full pb-2">
@@ -133,8 +141,8 @@ export default function MixerCenter() {
       <div className="mx-3.5 h-px bg-[#222234] shrink-0" />
 
       {/* Beat FX */}
-      <div className="px-3.5 py-2.5 shrink-0">
-        <span className="font-mono text-[9px] text-white tracking-widest text-center block uppercase mb-2 font-black">Beat FX</span>
+      <div className="px-3.5 py-1.5 shrink-0">
+        <span className="font-mono text-[9px] text-white tracking-widest text-center block uppercase mb-1 font-black">Beat FX</span>
         <div className="flex flex-wrap gap-1 justify-center">
           {FX_LIST.map((f) => {
             const isActive = f === activeFx;
@@ -148,16 +156,16 @@ export default function MixerCenter() {
                   backgroundColor: isActive ? "#ff6b0020" : "transparent",
                   boxShadow: isActive ? "0 0 10px rgba(255,107,0,0.3)" : "none",
                 }}
-                className="px-2 py-1 text-[9px] font-mono font-black rounded-md border cursor-pointer tracking-wider hover:text-white transition-all"
+                className="px-2 py-0.5 text-[8.5px] font-mono font-black rounded-md border cursor-pointer tracking-wider hover:text-white transition-all"
               >
                 {f}
               </button>
             );
           })}
         </div>
-        <div className="flex gap-4 justify-center items-center mt-2.5" style={{ height: 160 }}>
-          <Fader value={fxDepth} onChange={setFxDepth} label="Depth" color="#ff6b00" vertical length={140} />
-          <Fader value={fxRate} onChange={setFxRate} label="Rate" color="#ff6b00" vertical length={140} />
+        <div className="flex gap-4 justify-center items-center mt-1.5 transition-all duration-300" style={{ height: faderHeight }}>
+          <Fader value={fxDepth} onChange={setFxDepth} label="Depth" color="#ff6b00" vertical length={faderLen} defaultValue={0.5} />
+          <Fader value={fxRate} onChange={setFxRate} label="Rate" color="#ff6b00" vertical length={faderLen} defaultValue={0.5} />
         </div>
       </div>
 
@@ -165,7 +173,7 @@ export default function MixerCenter() {
       <div className="mx-3.5 h-px bg-[#222234] shrink-0" />
 
       {/* Crossfader & Auto Crossfader Control Section */}
-      <div className="flex flex-col items-center gap-1.5 px-3.5 py-2 shrink-0 w-full">
+      <div className="flex flex-col items-center gap-1 px-3.5 py-1.5 shrink-0 w-full">
         <div className="flex justify-between w-full font-mono text-[12px] font-black px-0.5">
           <span style={{ color: "#ff6b00" }}>A</span>
           <span className="font-mono text-[9.5px] text-white tracking-widest uppercase mt-0.5 font-black flex items-center gap-1">
@@ -257,9 +265,9 @@ export default function MixerCenter() {
       <div className="mx-3.5 h-px bg-[#222234] shrink-0" />
 
       {/* Booth + Headphone Cue Faders */}
-      <div className="flex gap-5 justify-center items-center px-3.5 py-2.5 shrink-0" style={{ height: 160 }}>
-        <Fader value={boothVolume} onChange={setBoothVolume} label="Booth" color="#ff6b00" vertical length={140} />
-        <Fader value={headphoneVolume} onChange={setHeadphoneVolume} label="Cue Vol" color="#ff6b00" vertical length={140} />
+      <div className="flex gap-5 justify-center items-center px-3.5 py-1.5 shrink-0" style={{ height: 110 }}>
+        <Fader value={boothVolume} onChange={setBoothVolume} label="Booth" color="#ff6b00" vertical length={95} />
+        <Fader value={headphoneVolume} onChange={setHeadphoneVolume} label="Cue Vol" color="#ff6b00" vertical length={95} />
       </div>
 
       {/* Cue buttons */}

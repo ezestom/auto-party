@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { RotateCcw } from "lucide-react";
 
 interface FaderProps {
   value: number; // 0.0 to 1.0
@@ -116,19 +117,36 @@ export default function Fader({
   const travel = Math.max(20, actualLength - 24);
   const thumbPos = vertical ? (1 - value) * travel : value * travel;
 
+  const isModified = Math.abs(value - defaultValue) > 0.01;
+
   return (
     <div className={`flex flex-col items-center gap-0.5 select-none relative group min-h-0 justify-center ${vertical ? "h-full max-h-full" : "w-full max-w-full"}`}>
-      {/* High-visibility label header */}
+      {/* High-visibility label header with Reset Action */}
       {label && (
-        <div className="flex items-center gap-1 px-1 py-0.5 rounded shrink-0">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onChange(defaultValue);
+          }}
+          title={`Click or double-click to reset ${label}`}
+          className="flex items-center gap-1 px-1 py-0.5 rounded shrink-0 group/reset hover:bg-white/10 transition-all cursor-pointer border border-transparent hover:border-white/20"
+        >
           <span
-            className="w-1.5 h-1.5 rounded-full"
+            className="w-1.5 h-1.5 rounded-full shrink-0"
             style={{ backgroundColor: color, boxShadow: `0 0 5px ${color}` }}
           />
-          <span className="font-mono text-[10px] font-black uppercase tracking-wider text-white select-none drop-shadow">
+          <span className="font-mono text-[9.5px] font-black uppercase tracking-wider text-white select-none drop-shadow">
             {label}
           </span>
-        </div>
+          <RotateCcw
+            size={9}
+            className={`transition-all ${
+              isModified
+                ? "text-[#ff6b00] opacity-90 group-hover/reset:rotate-[-90deg]"
+                : "text-[#777795] opacity-0 group-hover/reset:opacity-100"
+            }`}
+          />
+        </button>
       )}
 
       {/* Floating Tooltip Value Badge on Hover or Drag */}

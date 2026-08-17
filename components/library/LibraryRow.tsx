@@ -8,9 +8,10 @@ import { Music, Check, Loader2 } from "lucide-react";
 
 interface LibraryRowProps {
   track: TrackMetadata;
+  index?: number;
 }
 
-export default function LibraryRow({ track }: LibraryRowProps) {
+export default function LibraryRow({ track, index }: LibraryRowProps) {
   const deckA = useDeckStore((state) => state.decks.A);
   const deckB = useDeckStore((state) => state.decks.B);
   const { setTrack } = useDeckStore();
@@ -144,36 +145,64 @@ export default function LibraryRow({ track }: LibraryRowProps) {
   };
 
   return (
-    <div className="flex items-center gap-2.5 py-2.5 px-3 hover:bg-[#1a1a24] transition-colors duration-100 border-b border-[#252530] text-xs select-none">
-      {/* Artwork disk */}
-      <div className="relative w-8 h-8 rounded bg-linear-to-br from-[#2a2a35] to-[#121218] flex items-center justify-center border border-border-custom shrink-0">
-        <Music size={12} className="text-text-muted" />
-        {isLoadedA && (
-          <div className="absolute top-0 left-0 w-1.5 h-1.5 rounded-full bg-[#ff6b00] animate-pulse" />
-        )}
-        {isLoadedB && (
-          <div className="absolute top-0 right-0 w-1.5 h-1.5 rounded-full bg-[#00d4ff] animate-pulse" />
-        )}
+    <div
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData("application/json", JSON.stringify(track));
+        e.dataTransfer.setData("text/plain", track.id);
+        e.dataTransfer.effectAllowed = "copy";
+      }}
+      className="grid grid-cols-12 gap-2 items-center py-1 px-3 hover:bg-[#161622] transition-colors duration-100 border-b border-[#1b1b28] text-xs select-none min-h-[34px] cursor-grab active:cursor-grabbing"
+    >
+      {/* # and Artwork */}
+      <div className="col-span-1 flex items-center gap-2">
+        <span className="font-mono text-[9px] text-[#555570] w-4 text-center font-bold">
+          {index !== undefined ? index + 1 : ""}
+        </span>
+        <div className="relative w-6 h-6 rounded bg-gradient-to-br from-[#2a2a35] to-[#121218] flex items-center justify-center border border-[#252538] shrink-0">
+          <Music size={10} className="text-[#666680]" />
+          {isLoadedA && (
+            <div className="absolute top-0 left-0 w-1.5 h-1.5 rounded-full bg-[#ff6b00] animate-pulse" />
+          )}
+          {isLoadedB && (
+            <div className="absolute top-0 right-0 w-1.5 h-1.5 rounded-full bg-[#00d4ff] animate-pulse" />
+          )}
+        </div>
       </div>
 
-      {/* Track details (Title/Artist + meta metadata row) */}
-      <div className="flex-1 min-w-0">
-        <div className="font-display font-semibold text-white truncate leading-tight">
+      {/* Track Title */}
+      <div className="col-span-4 min-w-0 pr-2">
+        <div className="font-display font-bold text-white text-[12px] truncate leading-tight">
           {track.title}
         </div>
-        <div className="flex items-center gap-1.5 mt-1 font-mono text-[9px] text-text-dim">
-          <span className="truncate max-w-20">{track.artist}</span>
-          <span className="text-text-muted">•</span>
-          <span className="text-cyan-custom font-bold">{track.key}</span>
-          <span className="text-text-muted">•</span>
-          <span className="text-white">{track.bpm.toFixed(0)} BPM</span>
-          <span className="text-text-muted">•</span>
-          <span>{formattedDuration(track.duration)}</span>
+      </div>
+
+      {/* Artist */}
+      <div className="col-span-3 min-w-0 pr-2">
+        <div className="font-mono text-[10px] text-[#9999b0] truncate">
+          {track.artist}
         </div>
+      </div>
+
+      {/* BPM */}
+      <div className="col-span-1 text-center font-mono text-[10.5px] font-extrabold text-white">
+        {track.bpm.toFixed(0)}
+      </div>
+
+      {/* Key */}
+      <div className="col-span-1 text-center">
+        <span className="font-mono text-[9.5px] font-black px-1.5 py-0.5 rounded border border-[#00d4ff40] bg-[#00d4ff15] text-[#00d4ff]">
+          {track.key}
+        </span>
+      </div>
+
+      {/* Duration */}
+      <div className="col-span-1 text-center font-mono text-[10px] text-[#8888a0]">
+        {formattedDuration(track.duration)}
       </div>
 
       {/* Load buttons */}
-      <div className="flex gap-1 shrink-0">
+      <div className="col-span-1 flex items-center justify-end gap-1 shrink-0">
         {/* Load A */}
         <button
           onClick={handleLoadA}
@@ -184,16 +213,17 @@ export default function LibraryRow({ track }: LibraryRowProps) {
             color: confirmA ? "#ff3355" : "#ff6b00",
             boxShadow: isLoadedA ? "0 0 6px rgba(255,107,0,0.3)" : "none",
           }}
-          className={`w-14 h-5.5 text-[7.5px] font-mono font-black rounded border tracking-wide cursor-pointer transition-all duration-150 flex items-center justify-center uppercase hover:bg-[#ff6b0015] ${
+          className={`w-9 h-5 text-[8px] font-mono font-black rounded border tracking-wide cursor-pointer transition-all duration-150 flex items-center justify-center uppercase hover:bg-[#ff6b0015] ${
             confirmA ? "animate-pulse" : ""
           }`}
+          title="Load to Deck A"
         >
           {isLoadingA ? (
             <Loader2 size={8} className="animate-spin text-orange" />
           ) : confirmA ? (
-            "REPLACE?"
+            "?"
           ) : isLoadedA ? (
-            <Check size={8} className="stroke-[3px] mr-0.5" />
+            <Check size={8} className="stroke-[3px]" />
           ) : (
             "A"
           )}
@@ -209,16 +239,17 @@ export default function LibraryRow({ track }: LibraryRowProps) {
             color: confirmB ? "#ff3355" : "#00d4ff",
             boxShadow: isLoadedB ? "0 0 6px rgba(0,212,255,0.3)" : "none",
           }}
-          className={`w-14 h-5.5 text-[7.5px] font-mono font-black rounded border tracking-wide cursor-pointer transition-all duration-150 flex items-center justify-center uppercase hover:bg-[#00d4ff15] ${
+          className={`w-9 h-5 text-[8px] font-mono font-black rounded border tracking-wide cursor-pointer transition-all duration-150 flex items-center justify-center uppercase hover:bg-[#00d4ff15] ${
             confirmB ? "animate-pulse" : ""
           }`}
+          title="Load to Deck B"
         >
           {isLoadingB ? (
             <Loader2 size={8} className="animate-spin text-cyan-custom" />
           ) : confirmB ? (
-            "REPLACE?"
+            "?"
           ) : isLoadedB ? (
-            <Check size={8} className="stroke-[3px] mr-0.5" />
+            <Check size={8} className="stroke-[3px]" />
           ) : (
             "B"
           )}

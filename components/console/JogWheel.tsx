@@ -3,6 +3,8 @@
 import { useRef, useState, useEffect, useCallback } from "react";
 import { useDeckStore } from "../../stores/deckStore";
 import { getAudioEngine } from "../../lib/audio/AudioEngine";
+import { loadTrackById, importAndLoadFile } from "../../lib/audio/trackLoader";
+import { Upload, Loader2 } from "lucide-react";
 
 interface JogWheelProps {
   deckId: "A" | "B";
@@ -14,13 +16,13 @@ export default function JogWheel({ deckId, color, size = 340 }: JogWheelProps) {
   const deck = useDeckStore((s) => s.decks[deckId]);
   const { setProgress } = useDeckStore();
 
-  const baseSize = size || 340;
-  const cx = baseSize / 2;
-  const cy = baseSize / 2;
-  const outerR = baseSize / 2 - 6;
-  const innerR = outerR - 18;
-  const artworkR = baseSize * 0.24;
-  const labelR = baseSize * 0.19;
+  const svgInternalSize = 340;
+  const cx = 170;
+  const cy = 170;
+  const outerR = 164;
+  const innerR = 146;
+  const artworkR = 81.6;
+  const labelR = 64.6;
 
   // Physics state
   const [rotation, setRotation] = useState(0);
@@ -196,6 +198,67 @@ export default function JogWheel({ deckId, color, size = 340 }: JogWheelProps) {
   const colorDim = deckId === "A" ? "#ff6b0035" : "#00d4ff35";
   const colorMid = deckId === "A" ? "#ff6b0090" : "#00d4ff90";
 
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "copy";
+    if (!isDragOver) setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+
+    // 1. External files dropped from PC
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      if (
+        file.type.startsWith("audio/") ||
+        file.name.endsWith(".mp3") ||
+        file.name.endsWith(".wav") ||
+        file.name.endsWith(".m4a") ||
+        file.name.endsWith(".ogg") ||
+        file.name.endsWith(".flac") ||
+        file.name.endsWith(".aac")
+      ) {
+        setIsImporting(true);
+        try {
+          await importAndLoadFile(file, deckId);
+        } catch (err) {
+          console.error("Drop audio import error:", err);
+        } finally {
+          setIsImporting(false);
+        }
+      }
+      return;
+    }
+
+    // 2. Internal track dropped from Library table
+    const jsonData = e.dataTransfer.getData("application/json");
+    const trackIdData = e.dataTransfer.getData("text/plain");
+
+    if (jsonData || trackIdData) {
+      try {
+        const trackData = jsonData ? JSON.parse(jsonData) : { id: trackIdData };
+        if (trackData && trackData.id) {
+          await loadTrackById(trackData.id, deckId);
+        }
+      } catch (err) {
+        console.error("Drop track error:", err);
+      }
+    }
+  };
+
   // Track display info
   const trackTitle = deck.track ? deck.track.title : "NO TRACK LOADED";
   const trackArtist = deck.track ? deck.track.artist : "SELECT FROM LIBRARY";
@@ -205,8 +268,40 @@ export default function JogWheel({ deckId, color, size = 340 }: JogWheelProps) {
 
   return (
     <div
-      className="relative flex items-center justify-center select-none group w-full h-full max-w-[340px] max-h-[340px] aspect-square shrink min-w-[160px] min-h-[160px]"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      style={{
+        maxWidth: size,
+        maxHeight: size,
+      }}
+      className={`relative flex items-center justify-center select-none group w-full h-full aspect-square shrink min-w-[140px] min-h-[140px] rounded-full transition-all duration-300 ease-in-out ${
+        isDragOver ? "scale-105" : ""
+      }`}
     >
+      {/* Drag Over Visual Glow & Drop Overlay */}
+      {isDragOver && (
+        <div
+          className="absolute inset-0 rounded-full border-2 border-dashed flex flex-col items-center justify-center gap-1 z-40 bg-black/85 backdrop-blur-md animate-pulse pointer-events-none"
+          style={{ borderColor: color, boxShadow: `0 0 35px ${color}90` }}
+        >
+          <Upload size={28} style={{ color }} className="animate-bounce" />
+          <span className="font-mono text-[9px] font-black uppercase tracking-widest text-white">
+            LOAD DECK {deckId}
+          </span>
+        </div>
+      )}
+
+      {/* Importing Progress Overlay */}
+      {isImporting && (
+        <div className="absolute inset-0 rounded-full flex flex-col items-center justify-center gap-1 z-40 bg-black/90 backdrop-blur-md pointer-events-none">
+          <Loader2 size={26} style={{ color }} className="animate-spin" />
+          <span className="font-mono text-[8.5px] font-black uppercase tracking-widest text-white">
+            IMPORTING...
+          </span>
+        </div>
+      )}
+
       {/* Outer neon cyber aura glow (responsive) */}
       <div
         className="absolute rounded-full pointer-events-none transition-all duration-500 inset-0"
@@ -220,7 +315,7 @@ export default function JogWheel({ deckId, color, size = 340 }: JogWheelProps) {
 
       <svg
         ref={svgRef}
-        viewBox={`0 0 ${baseSize} ${baseSize}`}
+        viewBox="0 0 340 340"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
