@@ -1,0 +1,158 @@
+@import "tailwindcss";
+
+:root {
+  /* ── Background Surfaces ── */
+  --bg:          #060608;   /* deepest background */
+  --surface:     #0f0f12;   /* deck panel fill */
+  --panel:       #141418;   /* raised section fill */
+  --raised:      #1c1c22;   /* button/knob body base */
+  --inset:       #06060a;   /* recessed areas (fader wells) */
+
+  /* ── Borders ── */
+  --border:      #1e1e2a;   /* default element border */
+  --border-hi:   #2e2e40;   /* highlighted border (hover) */
+  --border-glow: #ff6b0060; /* orange glow border (active) */
+
+  /* ── Brand Accents ── */
+  --orange:      #ff6b00;   /* primary accent — Pioneer-inspired */
+  --orange-dim:  rgba(255,107,0,0.14);
+  --orange-glow: rgba(255,107,0,0.40);
+
+  /* ── Deck Identity Colors ── */
+  --deck-a:      #ff6b00;   /* Deck A — warm orange */
+  --deck-b:      #00d4ff;   /* Deck B — cool cyan */
+  --deck-a-dim:  rgba(255,107,0,0.12);
+  --deck-b-dim:  rgba(0,212,255,0.12);
+
+  /* ── Status Colors ── */
+  --green:       #00ff88;   /* active / sync'd / OK */
+  --red:         #ff3355;   /* clip / error / recording */
+  --yellow:      #ffd600;   /* VU warning zone */
+
+  /* ── Hot Cue Pad Colors (8 slots) ── */
+  --cue-1:       #ff6b00;
+  --cue-2:       #ff9500;
+  --cue-3:       #ffd600;
+  --cue-4:       #39ff82;
+  --cue-5:       #00d4ff;
+  --cue-6:       #0055ff;
+  --cue-7:       #cc44ff;
+  --cue-8:       #ff2255;
+
+  /* ── Typography ── */
+  --text:        #e8e8f0;
+  --text-dim:    #8888a0;
+  --text-muted:  #444455;
+
+  /* ── Typography Scale ── */
+  --font-display: var(--font-syne), 'Syne', sans-serif;
+  --font-mono:    var(--font-dm-mono), 'DM Mono', monospace;
+  --font-label:   var(--font-space-grotesk), 'Space Grotesk', sans-serif;
+
+  /* ── Spacing ── */
+  --gap-xs:   4px;
+  --gap-sm:   8px;
+  --gap-md:   12px;
+  --gap-lg:   16px;
+
+  /* ── Border Radius ── */
+  --r-sm:  4px;   /* buttons, pills */
+  --r-md:  8px;   /* panels, cards */
+  --r-lg:  14px;  /* deck panels */
+
+  /* ── Shadows ── */
+  --shadow-panel:  0 8px 40px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.03);
+  --shadow-knob:   0 2px 8px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05);
+  --shadow-pad:    inset 0 1px 0 rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.4);
+  --shadow-active: 0 0 12px var(--orange-glow);
+
+  /* ── Transitions ── */
+  --t-fast:   0.08s ease;
+  --t-med:    0.15s ease;
+  --t-slow:   0.3s ease;
+}
+
+@theme {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-panel: var(--panel);
+  --color-raised: var(--raised);
+  --color-inset: var(--inset);
+  --color-border-custom: var(--border);
+  --color-border-hi: var(--border-hi);
+  --color-orange-custom: var(--orange);
+  --color-deck-a: var(--deck-a);
+  --color-deck-b: var(--deck-b);
+  --color-green-custom: var(--green);
+  --color-red-custom: var(--red);
+  --color-yellow-custom: var(--yellow);
+  --color-text-custom: var(--text);
+  --color-text-dim: var(--text-dim);
+  --color-text-muted: var(--text-muted);
+  --font-display: var(--font-display);
+  --font-mono: var(--font-mono);
+  --font-label: var(--font-label);
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-display);
+}
+
+/* Smooth hardware-accelerated transforms */
+.jog-wheel {
+  will-change: transform;
+}
+
+/* Performance pad hover state */
+.pad-btn:hover:not(:active) {
+  border-color: #303042 !important;
+  background: linear-gradient(145deg, #242436 0%, #1a1a2a 40%, #14141f 100%) !important;
+}
+.pad-btn:hover .pad-num {
+  color: #8888a8 !important;
+}
+
+/* Pad mode tab hover (inactive only) */
+.pad-mode-tab:not(.is-active):hover {
+  color: #8888a8 !important;
+  border-color: #303042 !important;
+  background-color: #18182a !important;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--orange);
+}
+
+/* Button press feedback */
+button:active {
+  transform: scale(0.97);
+}
+
+/* Glowing text utility */
+.glow-orange {
+  text-shadow: 0 0 16px rgba(255,107,0,0.7);
+}
+.glow-cyan {
+  text-shadow: 0 0 16px rgba(0,212,255,0.7);
+}
+.glow-green {
+  text-shadow: 0 0 12px rgba(0,255,136,0.6);
+}
