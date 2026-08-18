@@ -33,16 +33,7 @@ interface LibraryStore {
   setImportStatus: (status: Partial<ImportStatus>) => void;
 }
 
-const mockTracksMetadata = [
-  { id: "t1", title: "Blinding Lights", artist: "The Weeknd", bpm: 171.0, key: "7A", duration: 200, color: "#ff6b00" },
-  { id: "t2", title: "Levitating", artist: "Dua Lipa", bpm: 103.0, key: "6B", duration: 204, color: "#00d4ff" },
-  { id: "t3", title: "One More Time", artist: "Daft Punk", bpm: 123.0, key: "5A", duration: 320, color: "#ffd600" },
-  { id: "t4", title: "Strobe", artist: "Deadmau5", bpm: 128.0, key: "9A", duration: 635, color: "#ff2255" },
-  { id: "t5", title: "Midnight City", artist: "M83", bpm: 105.0, key: "4B", duration: 243, color: "#cc44ff" },
-  { id: "t6", title: "Don't You Worry Child", artist: "Swedish House Mafia", bpm: 129.0, key: "8B", duration: 213, color: "#39ff82" },
-  { id: "t7", title: "Titanium", artist: "David Guetta ft. Sia", bpm: 126.0, key: "10A", duration: 245, color: "#0055ff" },
-  { id: "t8", title: "Animals", artist: "Martin Garrix", bpm: 128.0, key: "2A", duration: 304, color: "#ff9500" },
-];
+// No mock tracks — library starts empty, user imports their own music
 
 export const useLibraryStore = create<LibraryStore>((set, get) => ({
   tracks: [],
@@ -59,16 +50,7 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
   },
 
   initLibrary: async () => {
-    // Populate with mock tracks if IndexedDB is empty
-    const count = await db.tracks.count();
-    if (count === 0) {
-      const dbTracks: DbTrack[] = mockTracksMetadata.map((track) => ({
-        ...track,
-        audioData: new ArrayBuffer(0),
-        peaks: [],
-      }));
-      await db.tracks.bulkPut(dbTracks);
-    }
+    // Library starts empty — user imports their own tracks
     await get().loadTracksFromDb();
   },
 
@@ -170,6 +152,21 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
         };
       });
 
+      // 5. Calculate Auto-Gain (RMS normalization)
+      // Target: -14 dBFS RMS (~0.2 linear) for consistent loudness
+      const TARGET_RMS = 0.2;
+      let sumSquares = 0;
+      const sampleStep = Math.max(1, Math.floor(channelData.length / 50000)); // sample subset for speed
+      let sampleCount = 0;
+      for (let i = 0; i < channelData.length; i += sampleStep) {
+        sumSquares += channelData[i] * channelData[i];
+        sampleCount++;
+      }
+      const rms = Math.sqrt(sumSquares / sampleCount);
+      const gainCorrection = rms > 0.001 ? TARGET_RMS / rms : 1.0;
+      // Clamp to reasonable range (0.5x to 3.0x) to avoid extreme adjustments
+      const clampedGain = Math.max(0.5, Math.min(3.0, gainCorrection));
+
       // Heuristic metadata from file name: "Artist - Title.mp3"
       const nameWithoutExt = file.name.substring(0, file.name.lastIndexOf(".")) || file.name;
       const parts = nameWithoutExt.split(" - ");
@@ -199,6 +196,7 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
         color: randColor,
         audioData: arrayBuffer,
         peaks,
+        gainCorrection: clampedGain,
       };
 
       await db.tracks.put(dbTrack);

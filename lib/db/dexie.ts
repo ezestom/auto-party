@@ -10,6 +10,7 @@ export interface DbTrack {
   color: string;
   audioData: ArrayBuffer; // stores the binary audio file data
   peaks: number[]; // pre-computed peak levels (0.0 to 1.0)
+  gainCorrection?: number; // auto-gain normalization factor (default 1.0)
 }
 
 export interface DbHotCue {
@@ -27,10 +28,21 @@ export interface DbLoop {
   length: number; // loop length in beats
 }
 
+export interface DbVideo {
+  id: string;
+  title: string;
+  category: string;
+  duration: number; // in seconds
+  url?: string;
+  videoData?: ArrayBuffer;
+  color?: string;
+}
+
 export class MixrDatabase extends Dexie {
   tracks!: Table<DbTrack, string>;
   hotCues!: Table<DbHotCue, number>;
   loops!: Table<DbLoop, number>;
+  videos!: Table<DbVideo, string>;
 
   constructor() {
     super("MixrDatabase");
@@ -38,6 +50,14 @@ export class MixrDatabase extends Dexie {
       tracks: "id, title, artist, bpm, key, duration",
       hotCues: "++id, trackId, index",
       loops: "++id, trackId",
+      videos: "id, title, category, duration",
+    });
+    // v2: added gainCorrection field to tracks (no index change needed)
+    this.version(2).stores({
+      tracks: "id, title, artist, bpm, key, duration",
+      hotCues: "++id, trackId, index",
+      loops: "++id, trackId",
+      videos: "id, title, category, duration",
     });
   }
 }

@@ -5,9 +5,16 @@ import DeckPanel from "./DeckPanel";
 import MixerCenter from "./MixerCenter";
 import LibraryPanel from "../library/LibraryPanel";
 import Laser from "../ui/Laser";
+import VJMiniPlayer from "../vj/VJMiniPlayer";
+import AIAutoDJButton from "../ai/AIAutoDJButton";
+import APIKeyModal from "../ai/APIKeyModal";
+import SettingsModal from "../settings/SettingsModal";
 import { useDeckStore } from "../../stores/deckStore";
 import { useMixerStore } from "../../stores/mixerStore";
-import { Music, Radio, Cpu, Wifi, Zap } from "lucide-react";
+import { useVJStore } from "../../stores/vjStore";
+import { useAIDJStore } from "../../stores/aiDJStore";
+import { useSettingsStore } from "../../stores/settingsStore";
+import { Music, Radio, Cpu, Wifi, Zap, Tv, Settings } from "lucide-react";
 import { getAudioEngine } from "../../lib/audio/AudioEngine";
 
 export default function DJConsole() {
@@ -60,8 +67,8 @@ export default function DJConsole() {
       const playingA = deckA.isPlaying;
       const playingB = deckB.isPlaying;
 
-      // Target Intensity: 1.0 if any deck is playing, 0.55 (ambient laser glow) if both paused
-      const targetIntensity = playingA || playingB ? 1.0 : 0.55;
+      // Target Intensity: 1.0 if any deck is playing, 0.0 (Laser OFF) if both paused
+      const targetIntensity = playingA || playingB ? 1.0 : 0.0;
 
       // Calculate Target Color weights based on playing decks and crossfader/channel volume
       let weightA = 0;
@@ -318,6 +325,34 @@ export default function DJConsole() {
               <Music size={12} />
               Library
             </button>
+            <AIAutoDJButton />
+            <VJMiniPlayer />
+            <button
+              id="vj-display-btn"
+              onClick={() => {
+                const currentActive = useVJStore.getState().activeVideo;
+                const allVideos = useVJStore.getState().videos;
+                if (!currentActive && allVideos.length > 0) {
+                  useVJStore.getState().setActiveVideo(allVideos[0]);
+                } else if (currentActive) {
+                  useVJStore.getState().setActiveVideo(currentActive);
+                }
+
+                if (typeof window !== "undefined") {
+                  window.open("/vj", "EZE_MIX_VJ_WINDOW", "width=1280,height=720,menubar=no,toolbar=no");
+                }
+              }}
+              style={{
+                borderColor: "#00d4ff70",
+                color: "#00d4ff",
+                backgroundColor: "#00d4ff18",
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-mono font-black tracking-wider rounded-lg border cursor-pointer hover:bg-[#00d4ff]25 hover:text-white uppercase transition-all shadow-[0_0_12px_rgba(0,212,255,0.2)]"
+              title="Open VJ Display Window for Monitor 2 Projector/TV"
+            >
+              <Tv size={12} className="text-[#00d4ff]" />
+              VJ Display
+            </button>
             <button
               id="record-btn"
               onClick={handleRecordToggle}
@@ -340,6 +375,19 @@ export default function DJConsole() {
               className="px-3 py-1.5 text-[10px] font-mono font-black tracking-wider rounded-lg border cursor-pointer hover:text-white uppercase transition-colors"
             >
               Quantize
+            </button>
+            <button
+              id="settings-btn"
+              onClick={() => useSettingsStore.getState().setIsOpen(true)}
+              style={{
+                borderColor: "#28283d",
+                color: "#8888a0",
+                backgroundColor: "transparent",
+              }}
+              className="flex items-center justify-center w-8 h-8 rounded-lg border cursor-pointer hover:border-[#ff6b00] hover:text-white hover:bg-[#ff6b0015] transition-all"
+              title="Ajustes de Consola (Preferencias, Audio, AI)"
+            >
+              <Settings size={13} />
             </button>
           </div>
         </header>
@@ -415,6 +463,8 @@ export default function DJConsole() {
           </div>
         </footer>
       </div>
+      <APIKeyModal />
+      <SettingsModal />
     </Laser>
   );
 }

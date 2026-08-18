@@ -4,7 +4,8 @@ import { useState, useEffect } from "react";
 import { useDeckStore, TrackMetadata } from "../../stores/deckStore";
 import { db } from "../../lib/db/dexie";
 import { getAudioEngine } from "../../lib/audio/AudioEngine";
-import { Music, Check, Loader2 } from "lucide-react";
+import { useMixerStore } from "../../stores/mixerStore";
+import { Music, Check, Loader2, Lock } from "lucide-react";
 
 interface LibraryRowProps {
   track: TrackMetadata;
@@ -67,7 +68,13 @@ export default function LibraryRow({ track, index }: LibraryRowProps) {
       // 4. Update deck state store (resets progress, time, cues, isPlaying = false)
       setTrack(deckId, track);
 
-      // 5. Fetch and restore saved hot cues and loops from IndexedDB
+      // 5. Apply auto-gain correction if available
+      if (dbTrack?.gainCorrection) {
+        const normalizedGain = Math.max(0, Math.min(1, 0.75 * dbTrack.gainCorrection));
+        useMixerStore.getState().setChannelGain(deckId, normalizedGain);
+      }
+
+      // 6. Fetch and restore saved hot cues and loops from IndexedDB
       const savedCues = await db.hotCues.where("trackId").equals(track.id).toArray();
       const savedLoops = await db.loops.where("trackId").equals(track.id).toArray();
 
@@ -138,6 +145,41 @@ export default function LibraryRow({ track, index }: LibraryRowProps) {
   const isLoadedA = deckA.track?.id === track.id;
   const isLoadedB = deckB.track?.id === track.id;
 
+  // Active playing track reference for harmonic matching
+  const activePlayingTrack = deckA.isPlaying && deckA.track ? deckA.track : deckB.isPlaying && deckB.track ? deckB.track : null;
+
+  // Camelot Wheel harmonic compatibility check
+  let isHarmonicMatch = false;
+  let isBpmMatch = false;
+
+  if (activePlayingTrack && activePlayingTrack.id !== track.id) {
+    const parseCamelot = (k: string) => {
+      const match = k.match(/^(\d{1,2})([AB])$/i);
+      if (!match) return null;
+      return { num: parseInt(match[1], 10), letter: match[2].toUpperCase() };
+    };
+
+    const targetKey = parseCamelot(track.key);
+    const sourceKey = parseCamelot(activePlayingTrack.key);
+
+    if (targetKey && sourceKey) {
+      const numDiff = Math.abs(targetKey.num - sourceKey.num);
+      const isWrap = (targetKey.num === 1 && sourceKey.num === 12) || (targetKey.num === 12 && sourceKey.num === 1);
+      const isAdjacentNum = numDiff === 1 || isWrap;
+
+      if (targetKey.letter === sourceKey.letter) {
+        isHarmonicMatch = targetKey.num === sourceKey.num || isAdjacentNum;
+      } else {
+        isHarmonicMatch = targetKey.num === sourceKey.num; // Relative Major/Minor
+      }
+    }
+
+    // BPM within 6% (standard DJ pitch range)
+    isBpmMatch = Math.abs(track.bpm - activePlayingTrack.bpm) <= activePlayingTrack.bpm * 0.06;
+  }
+
+  const isPerfectMatch = isHarmonicMatch && isBpmMatch;
+
   const formattedDuration = (secs: number) => {
     const mins = Math.floor(secs / 60);
     const remainingSecs = Math.floor(secs % 60);
@@ -189,9 +231,20 @@ export default function LibraryRow({ track, index }: LibraryRowProps) {
         {track.bpm.toFixed(0)}
       </div>
 
-      {/* Key */}
-      <div className="col-span-1 text-center">
-        <span className="font-mono text-[9.5px] font-black px-1.5 py-0.5 rounded border border-[#00d4ff40] bg-[#00d4ff15] text-[#00d4ff]">
+      {/* Key & Match Indicator */}
+      <div className="col-span-1 text-center flex items-center justify-center gap-1">
+        <span
+          style={{
+            borderColor: isPerfectMatch ? "#00ff88" : isHarmonicMatch ? "#00d4ff" : "#00d4ff40",
+            backgroundColor: isPerfectMatch ? "#00ff8825" : isHarmonicMatch ? "#00d4ff15" : "#00d4ff15",
+            color: isPerfectMatch ? "#00ff88" : "#00d4ff",
+            boxShadow: isPerfectMatch ? "0 0 10px rgba(0,255,136,0.4)" : "none",
+          }}
+          className={`font-mono text-[9.5px] font-black px-1.5 py-0.5 rounded border transition-all ${
+            isPerfectMatch ? "animate-pulse" : ""
+          }`}
+          title={isPerfectMatch ? "Perfect Harmonic & BPM Match!" : isHarmonicMatch ? "Harmonic Key Match" : `Camelot Key: ${track.key}`}
+        >
           {track.key}
         </span>
       </div>
@@ -221,7 +274,7 @@ export default function LibraryRow({ track, index }: LibraryRowProps) {
           {isLoadingA ? (
             <Loader2 size={8} className="animate-spin text-orange" />
           ) : confirmA ? (
-            "?"
+            <Lock size={8} className="stroke-[2.5px]" />
           ) : isLoadedA ? (
             <Check size={8} className="stroke-[3px]" />
           ) : (
@@ -247,7 +300,7 @@ export default function LibraryRow({ track, index }: LibraryRowProps) {
           {isLoadingB ? (
             <Loader2 size={8} className="animate-spin text-cyan-custom" />
           ) : confirmB ? (
-            "?"
+            <Lock size={8} className="stroke-[2.5px]" />
           ) : isLoadedB ? (
             <Check size={8} className="stroke-[3px]" />
           ) : (
