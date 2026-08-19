@@ -4,8 +4,11 @@ import { useAIDJStore } from "../../stores/aiDJStore";
 import { Bot, SkipForward, Loader2, Square } from "lucide-react";
 
 export default function AIAutoDJButton() {
-  const { isActive, status, activate, deactivate, skipToNext, setShowApiKeyModal, apiKey, djComment, setlist, currentIndex, errorMessage } =
-    useAIDJStore();
+  const {
+    isActive, status, activate, deactivate, skipToNext, setShowApiKeyModal,
+    apiKey, djComment, setlist, currentIndex, errorMessage,
+    autoFXDrops, toggleAutoFXDrops,
+  } = useAIDJStore();
 
   const handleClick = () => {
     if (isActive) {
@@ -82,6 +85,24 @@ export default function AIAutoDJButton() {
             ? "AI DJ ON"
             : "AI DJ"}
       </button>
+
+      {/* Auto FX Drops toggle button */}
+      {isActive && (
+        <button
+          onClick={toggleAutoFXDrops}
+          style={{
+            borderColor: autoFXDrops ? "#ff0077" : "#2a2a3d",
+            color: autoFXDrops ? "#ff0077" : "#777790",
+            backgroundColor: autoFXDrops ? "#ff007718" : "transparent",
+            boxShadow: autoFXDrops ? "0 0 10px rgba(255,0,119,0.3)" : "none",
+          }}
+          className="px-2 py-1.5 text-[8.5px] font-mono font-black border rounded-lg cursor-pointer tracking-wider hover:text-white transition-all flex items-center gap-1 shrink-0"
+          title="Auto FX Drops: Dispara automáticamente Risers y Sub Drops en las transiciones de la IA"
+        >
+          <span>⚡</span>
+          <span>DROPS</span>
+        </button>
+      )}
 
       {/* Skip button (only visible when AI DJ is active) */}
       {isActive && status === "mixing" && (

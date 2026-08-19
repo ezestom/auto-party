@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { useDeckStore, TrackMetadata } from "../../stores/deckStore";
+import { useLibraryStore } from "../../stores/libraryStore";
 import { db } from "../../lib/db/dexie";
 import { getAudioEngine } from "../../lib/audio/AudioEngine";
 import { useMixerStore } from "../../stores/mixerStore";
-import { Music, Check, Loader2, Lock } from "lucide-react";
+import { Music, Check, Loader2, Lock, Trash2 } from "lucide-react";
 
 interface LibraryRowProps {
   track: TrackMetadata;
@@ -16,6 +17,7 @@ export default function LibraryRow({ track, index }: LibraryRowProps) {
   const deckA = useDeckStore((state) => state.decks.A);
   const deckB = useDeckStore((state) => state.decks.B);
   const { setTrack } = useDeckStore();
+  const { deleteTrack } = useLibraryStore();
 
   const [confirmA, setConfirmA] = useState(false);
   const [confirmB, setConfirmB] = useState(false);
@@ -194,7 +196,7 @@ export default function LibraryRow({ track, index }: LibraryRowProps) {
         e.dataTransfer.setData("text/plain", track.id);
         e.dataTransfer.effectAllowed = "copy";
       }}
-      className="grid grid-cols-12 gap-2 items-center py-1 px-3 hover:bg-[#161622] transition-colors duration-100 border-b border-[#1b1b28] text-xs select-none min-h-[34px] cursor-grab active:cursor-grabbing"
+      className="grid grid-cols-12 gap-2 items-center py-1 px-3 hover:bg-[#161622] transition-colors duration-100 border-b border-[#1b1b28] text-xs select-none min-h-[34px] cursor-grab active:cursor-grabbing group"
     >
       {/* # and Artwork */}
       <div className="col-span-1 flex items-center gap-2">
@@ -220,7 +222,7 @@ export default function LibraryRow({ track, index }: LibraryRowProps) {
       </div>
 
       {/* Artist */}
-      <div className="col-span-3 min-w-0 pr-2">
+      <div className="col-span-2 min-w-0 pr-2">
         <div className="font-mono text-[10px] text-[#9999b0] truncate">
           {track.artist}
         </div>
@@ -254,8 +256,8 @@ export default function LibraryRow({ track, index }: LibraryRowProps) {
         {formattedDuration(track.duration)}
       </div>
 
-      {/* Load buttons */}
-      <div className="col-span-1 flex items-center justify-end gap-1 shrink-0">
+      {/* Load buttons & Actions */}
+      <div className="col-span-2 flex items-center justify-end gap-1 shrink-0 pr-1">
         {/* Load A */}
         <button
           onClick={handleLoadA}
@@ -266,7 +268,7 @@ export default function LibraryRow({ track, index }: LibraryRowProps) {
             color: confirmA ? "#ff3355" : "#ff6b00",
             boxShadow: isLoadedA ? "0 0 6px rgba(255,107,0,0.3)" : "none",
           }}
-          className={`w-9 h-5 text-[8px] font-mono font-black rounded border tracking-wide cursor-pointer transition-all duration-150 flex items-center justify-center uppercase hover:bg-[#ff6b0015] ${
+          className={`w-8 h-5 text-[8px] font-mono font-black rounded border tracking-wide cursor-pointer transition-all duration-150 flex items-center justify-center uppercase hover:bg-[#ff6b0015] ${
             confirmA ? "animate-pulse" : ""
           }`}
           title="Load to Deck A"
@@ -292,7 +294,7 @@ export default function LibraryRow({ track, index }: LibraryRowProps) {
             color: confirmB ? "#ff3355" : "#00d4ff",
             boxShadow: isLoadedB ? "0 0 6px rgba(0,212,255,0.3)" : "none",
           }}
-          className={`w-9 h-5 text-[8px] font-mono font-black rounded border tracking-wide cursor-pointer transition-all duration-150 flex items-center justify-center uppercase hover:bg-[#00d4ff15] ${
+          className={`w-8 h-5 text-[8px] font-mono font-black rounded border tracking-wide cursor-pointer transition-all duration-150 flex items-center justify-center uppercase hover:bg-[#00d4ff15] ${
             confirmB ? "animate-pulse" : ""
           }`}
           title="Load to Deck B"
@@ -306,6 +308,18 @@ export default function LibraryRow({ track, index }: LibraryRowProps) {
           ) : (
             "B"
           )}
+        </button>
+
+        {/* Delete button (placed beside B) */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            deleteTrack(track.id);
+          }}
+          className="w-5 h-5 flex items-center justify-center text-[#666680] hover:text-red-500 hover:bg-red-500/10 rounded transition-all cursor-pointer opacity-0 group-hover:opacity-100 shrink-0"
+          title="Delete track"
+        >
+          <Trash2 size={11} />
         </button>
       </div>
     </div>

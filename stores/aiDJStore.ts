@@ -10,7 +10,9 @@ import {
 import { useLibraryStore } from "./libraryStore";
 import { useDeckStore } from "./deckStore";
 import { useMixerStore } from "./mixerStore";
+import { useVJStore } from "./vjStore";
 import { loadTrackById } from "../lib/audio/trackLoader";
+import { samplerEngine } from "../lib/audio/SamplerEngine";
 
 export type AIDJStatus =
   | "idle"
@@ -28,10 +30,12 @@ interface AIDJStore {
   djComment: string;
   errorMessage: string;
   showApiKeyModal: boolean;
+  autoFXDrops: boolean;
 
   // Actions
   setApiKey: (key: string) => void;
   setShowApiKeyModal: (show: boolean) => void;
+  toggleAutoFXDrops: () => void;
   activate: () => Promise<void>;
   deactivate: () => void;
   skipToNext: () => void;
@@ -81,6 +85,11 @@ function startTransitionMonitor() {
     const timeRemaining =
       activeDeckState.track.duration - activeDeckState.currentTime;
     const mixPoint = currentItem?.mixPoint || 24;
+
+    // AI Pre-Drop Build Riser: trigger noise sweep 2.5s before transition starts
+    if (aiState.autoFXDrops && timeRemaining <= mixPoint + 2.5 && timeRemaining > mixPoint + 1.5) {
+      samplerEngine.trigger("sweep", 0.55);
+    }
 
     // Trigger transition when we reach the mix point
     if (timeRemaining <= mixPoint && timeRemaining > mixPoint - 1) {
@@ -133,7 +142,28 @@ async function triggerAITransition(
     // 4. Trigger auto-crossfade to the target deck
     useMixerStore.getState().triggerAutoCrossfade(targetDeck);
 
-    // 5. Update AI state
+    // 5. Synchronize VJ Visual Display (rotate to next uploaded video & trigger visual drop)
+    try {
+      const vjState = useVJStore.getState();
+      vjState.rotateToNextVideo();
+      vjState.triggerDropFlash(
+        `🔥 DECK ${targetDeck} DROPPING 🔥`,
+        targetDeck === "A" ? "#ff6b00" : "#00d4ff"
+      );
+    } catch (e) {
+      console.warn("[AI DJ] VJ sync notice:", e);
+    }
+
+    // 6. Trigger AI Drop Stinger / Impact if enabled
+    if (aiState.autoFXDrops) {
+      if (style === "cut") {
+        samplerEngine.trigger("laser", 0.7);
+      } else {
+        samplerEngine.trigger("subdrop", 0.65);
+      }
+    }
+
+    // 7. Update AI state
     useAIDJStore.setState({
       currentIndex: nextIndex,
       status: "mixing",
@@ -156,6 +186,7 @@ export const useAIDJStore = create<AIDJStore>((set, get) => ({
   djComment: "",
   errorMessage: "",
   showApiKeyModal: false,
+  autoFXDrops: true,
 
   setApiKey: (key: string) => {
     if (typeof window !== "undefined") {
@@ -165,6 +196,8 @@ export const useAIDJStore = create<AIDJStore>((set, get) => ({
   },
 
   setShowApiKeyModal: (show: boolean) => set({ showApiKeyModal: show }),
+
+  toggleAutoFXDrops: () => set((state) => ({ autoFXDrops: !state.autoFXDrops })),
 
   activate: async () => {
     const { apiKey } = get();

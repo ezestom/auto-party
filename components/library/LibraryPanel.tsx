@@ -245,33 +245,22 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
           </div>
 
           {/* Table headers */}
-          <div className="grid grid-cols-12 gap-2 items-center font-mono text-[7.5px] font-extrabold text-[#777795] tracking-wider pb-1 border-b border-[#1c1c28] uppercase shrink-0 px-2 select-none">
+          <div className="grid grid-cols-12 gap-2 items-center font-mono text-[7.5px] font-extrabold text-[#777795] tracking-wider pb-1 border-b border-[#1c1c28] uppercase shrink-0 px-3 select-none">
             <div className="col-span-1">#</div>
-            <div onClick={() => setSort("title")} className="col-span-5 flex items-center gap-1 cursor-pointer hover:text-white">
+            <div onClick={() => setSort("title")} className="col-span-4 flex items-center gap-1 cursor-pointer hover:text-white">
               TITLE {sortField === "title" && <ArrowUpDown size={7} />}
             </div>
-            <div className="col-span-3">ARTIST</div>
+            <div className="col-span-2">ARTIST</div>
             <div onClick={() => setSort("bpm")} className="col-span-1 text-center cursor-pointer hover:text-white">BPM</div>
             <div className="col-span-1 text-center">KEY</div>
-            <div className="col-span-1 text-right">LOAD</div>
+            <div className="col-span-1 text-center">TIME</div>
+            <div className="col-span-2 text-right pr-2">LOAD</div>
           </div>
 
           {/* Scrollable audio track list */}
           <div className="flex-1 overflow-y-auto divide-y divide-[#181824] pr-1 mt-0.5">
             {tracks.map((track, i) => (
-              <div key={track.id} className="relative group">
-                <LibraryRow track={track} index={i} />
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteTrack(track.id);
-                  }}
-                  className="absolute right-16 top-1.5 opacity-0 group-hover:opacity-100 text-[#777790] hover:text-red-500 transition-all cursor-pointer p-0.5 rounded hover:bg-white/10 z-10"
-                  title="Delete Track"
-                >
-                  <Trash2 size={10} />
-                </button>
-              </div>
+              <LibraryRow key={track.id} track={track} index={i} />
             ))}
             {tracks.length === 0 && (
               <div className="py-6 text-center text-[#777790] font-mono text-[9px]">
@@ -329,6 +318,14 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
+              {/* Auto Beat Sync Badge */}
+              <div className="flex items-center gap-1 bg-[#12121e] px-2 py-0.5 rounded border border-[#222234]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#00ff88] animate-pulse" />
+                <span className="text-[7.5px] font-mono font-black text-[#00ff88] uppercase tracking-wider">
+                  AUTO BEAT SYNC
+                </span>
+              </div>
+
               <button
                 onClick={() => {
                   const currentActive = useVJStore.getState().activeVideo;

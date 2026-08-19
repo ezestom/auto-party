@@ -29,6 +29,7 @@ interface MixerStore {
   isAutoCrossfading: boolean;
   autoTarget: "A" | "B" | null;
   autoDuration: number;   // In seconds: 2, 4, 8, 16
+  isSmartEQ: boolean;     // Low-end Bass Swap & Filter Transition
 
   setCrossfader: (val: number) => void;
   setMasterVolume: (val: number) => void;
@@ -48,6 +49,7 @@ interface MixerStore {
   triggerAutoCrossfade: (target?: "A" | "B" | "TOGGLE") => void;
   stopAutoCrossfade: () => void;
   setAutoDuration: (duration: number) => void;
+  setSmartEQ: (enabled: boolean) => void;
 
   resetMixer: () => void;
 }
@@ -75,6 +77,7 @@ const defaultState = {
   isAutoCrossfading: false,
   autoTarget: null as "A" | "B" | null,
   autoDuration: 4, // default 4 seconds transition
+  isSmartEQ: true, // Low-end Bass Swap & Filter Transition enabled by default
   channels: {
     A: initialChannelState(),
     B: initialChannelState(),
@@ -212,6 +215,7 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
   },
 
   setAutoDuration: (duration) => set({ autoDuration: duration }),
+  setSmartEQ: (enabled) => set({ isSmartEQ: enabled }),
 
   resetMixer: () => set(defaultState),
 }));

@@ -200,6 +200,7 @@ export default function JogWheel({ deckId, color, size = 340 }: JogWheelProps) {
 
   const [isDragOver, setIsDragOver] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [loadingFileName, setLoadingFileName] = useState("");
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -232,12 +233,14 @@ export default function JogWheel({ deckId, color, size = 340 }: JogWheelProps) {
         file.name.endsWith(".aac")
       ) {
         setIsImporting(true);
+        setLoadingFileName(file.name);
         try {
           await importAndLoadFile(file, deckId);
         } catch (err) {
           console.error("Drop audio import error:", err);
         } finally {
           setIsImporting(false);
+          setLoadingFileName("");
         }
       }
       return;
@@ -248,13 +251,20 @@ export default function JogWheel({ deckId, color, size = 340 }: JogWheelProps) {
     const trackIdData = e.dataTransfer.getData("text/plain");
 
     if (jsonData || trackIdData) {
+      setIsImporting(true);
       try {
         const trackData = jsonData ? JSON.parse(jsonData) : { id: trackIdData };
+        if (trackData?.title) {
+          setLoadingFileName(trackData.title);
+        }
         if (trackData && trackData.id) {
           await loadTrackById(trackData.id, deckId);
         }
       } catch (err) {
         console.error("Drop track error:", err);
+      } finally {
+        setIsImporting(false);
+        setLoadingFileName("");
       }
     }
   };
@@ -292,13 +302,33 @@ export default function JogWheel({ deckId, color, size = 340 }: JogWheelProps) {
         </div>
       )}
 
-      {/* Importing Progress Overlay */}
+      {/* Importing / Loading Progress Overlay (Themed like Library Loader) */}
       {isImporting && (
-        <div className="absolute inset-0 rounded-full flex flex-col items-center justify-center gap-1 z-40 bg-black/90 backdrop-blur-md pointer-events-none">
-          <Loader2 size={26} style={{ color }} className="animate-spin" />
-          <span className="font-mono text-[8.5px] font-black uppercase tracking-widest text-white">
-            IMPORTING...
+        <div
+          className="absolute inset-0 rounded-full flex flex-col items-center justify-center p-6 z-50 bg-[#06060a]/95 backdrop-blur-md border border-white/10 pointer-events-none animate-fade-in shadow-2xl overflow-hidden text-center"
+          style={{ boxShadow: `0 0 30px ${color}50` }}
+        >
+          <Loader2 size={30} style={{ color }} className="animate-spin mb-2.5" />
+          <span className="font-mono text-[10.5px] font-black text-white uppercase tracking-widest leading-tight mb-0.5">
+            {loadingFileName ? "PROCESSING AUDIO" : "LOADING TRACK..."}
           </span>
+          <span className="font-mono text-[8px] uppercase tracking-wider text-[#8888a8] mb-2">
+            DECK {deckId} · DECODING
+          </span>
+          
+          {/* Animated mini indeterminate progress bar */}
+          <div className="w-24 bg-[#1c1c28] h-1.5 rounded-full overflow-hidden mb-1.5 border border-white/5 relative">
+            <div
+              className="h-full rounded-full animate-pulse w-full"
+              style={{ backgroundColor: color }}
+            />
+          </div>
+
+          {loadingFileName && (
+            <span className="font-mono text-[7.5px] text-[#777795] truncate max-w-[130px] px-1">
+              {loadingFileName}
+            </span>
+          )}
         </div>
       )}
 

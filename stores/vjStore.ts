@@ -31,6 +31,8 @@ interface VJState {
   setEffect: (effect: "NORMAL" | "STROBE" | "GLITCH" | "NEON_WAVE") => void;
   syncTime: (time: number) => void;
   setWindowOpen: (open: boolean) => void;
+  rotateToNextVideo: () => void;
+  triggerDropFlash: (dropText?: string, color?: string) => void;
 }
 
 export const useVJStore = create<VJState>((set, get) => ({
@@ -171,5 +173,28 @@ export const useVJStore = create<VJState>((set, get) => ({
 
   setWindowOpen: (open) => {
     set({ isWindowOpen: open });
+  },
+
+  rotateToNextVideo: () => {
+    const { videos, activeVideo } = get();
+    if (videos.length === 0) return;
+    if (videos.length === 1) {
+      // Re-trigger current video
+      get().setActiveVideo(videos[0]);
+      return;
+    }
+
+    const currentIndex = activeVideo ? videos.findIndex((v) => v.id === activeVideo.id) : -1;
+    const nextIndex = (currentIndex + 1) % videos.length;
+    const nextVideo = videos[nextIndex];
+    get().setActiveVideo(nextVideo);
+  },
+
+  triggerDropFlash: (dropText?: string, color?: string) => {
+    vjChannel.send({
+      type: "DROP_FLASH",
+      dropText: dropText || "🔥 DROP 🔥",
+      color: color || "#ff0077",
+    });
   },
 }));

@@ -15,8 +15,9 @@ export default function MixerCenter({ isLibraryOpen = true }: MixerCenterProps) 
     crossfader, masterVolume, headphoneVolume, headphoneMix, boothVolume,
     channels, setCrossfader, setMasterVolume, setHeadphoneVolume,
     setHeadphoneMix, setBoothVolume, toggleCue,
-    isAutoCrossfading, autoTarget, autoDuration,
-    triggerAutoCrossfade, stopAutoCrossfade, setAutoDuration,
+    isAutoCrossfading, autoTarget, autoDuration, isSmartEQ,
+    triggerAutoCrossfade, stopAutoCrossfade, setAutoDuration, setSmartEQ,
+    setEQLo, setEQMid, setEQHi, setFilter,
   } = useMixerStore();
 
   const deckA = useDeckStore((s) => s.decks.A);
@@ -34,7 +35,7 @@ export default function MixerCenter({ isLibraryOpen = true }: MixerCenterProps) 
   const faderHeight = isLibraryOpen ? 110 : 160;
   const faderLen = isLibraryOpen ? 95 : 140;
 
-  // 60FPS Auto-Crossfade Interpolation Animation Loop
+  // 60FPS Auto-Crossfade Interpolation Animation Loop with Smart EQ Low-End Swap
   useEffect(() => {
     if (!isAutoCrossfading || !autoTarget) return;
 
@@ -51,6 +52,18 @@ export default function MixerCenter({ isLibraryOpen = true }: MixerCenterProps) 
 
       if (Math.abs(currentCross - targetCross) < 0.005) {
         setCrossfader(targetCross);
+
+        // Reset EQ and filter cleanly on both decks upon transition completion
+        setEQLo("A", 0.75);
+        setEQMid("A", 0.75);
+        setEQHi("A", 0.75);
+        setFilter("A", 0.50);
+
+        setEQLo("B", 0.75);
+        setEQMid("B", 0.75);
+        setEQHi("B", 0.75);
+        setFilter("B", 0.50);
+
         stopAutoCrossfade();
         return;
       }
@@ -59,6 +72,53 @@ export default function MixerCenter({ isLibraryOpen = true }: MixerCenterProps) 
       const nextVal = Math.max(0, Math.min(1, currentCross + direction * speed * dt));
       setCrossfader(nextVal);
 
+      // Smart EQ parametric Low-End Bass Swap & Filter Automation
+      const activeSmartEQ = useMixerStore.getState().isSmartEQ;
+      if (activeSmartEQ) {
+        // Transition progress p from 0.0 (start) to 1.0 (destination)
+        const p = autoTarget === "B" ? nextVal : 1.0 - nextVal;
+        const inDeck = autoTarget;
+        const outDeck = autoTarget === "A" ? "B" : "A";
+
+        // 1. LOW EQ (Low-End Bass Swap curve)
+        let inLow = 0.15;
+        if (p > 0.35 && p < 0.65) {
+          const t = (p - 0.35) / 0.30;
+          const s = t * t * (3 - 2 * t);
+          inLow = 0.15 + 0.60 * s;
+        } else if (p >= 0.65) {
+          inLow = 0.75;
+        }
+
+        let outLow = 0.75;
+        if (p > 0.35 && p < 0.65) {
+          const t = (p - 0.35) / 0.30;
+          const s = t * t * (3 - 2 * t);
+          outLow = 0.75 - 0.70 * s;
+        } else if (p >= 0.65) {
+          outLow = 0.05;
+        }
+
+        // 2. MID / HI EQ:
+        const inMid = Math.min(0.75, 0.60 + 0.15 * Math.min(1, p / 0.5));
+        const inHi = Math.min(0.75, 0.65 + 0.10 * Math.min(1, p / 0.4));
+        const outMid = p > 0.5 ? Math.max(0.40, 0.75 - 0.35 * ((p - 0.5) / 0.5)) : 0.75;
+        const outHi = p > 0.5 ? Math.max(0.45, 0.75 - 0.30 * ((p - 0.5) / 0.5)) : 0.75;
+
+        // 3. High-Pass Filter sweep on outgoing track tail
+        const outFilter = p > 0.5 ? 0.50 + 0.18 * ((p - 0.5) / 0.5) : 0.50;
+
+        setEQLo(inDeck, inLow);
+        setEQMid(inDeck, inMid);
+        setEQHi(inDeck, inHi);
+        setFilter(inDeck, 0.50);
+
+        setEQLo(outDeck, outLow);
+        setEQMid(outDeck, outMid);
+        setEQHi(outDeck, outHi);
+        setFilter(outDeck, outFilter);
+      }
+
       animFrameRef.current = requestAnimationFrame(stepAutoCrossfade);
     };
 
@@ -66,7 +126,7 @@ export default function MixerCenter({ isLibraryOpen = true }: MixerCenterProps) 
     return () => {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     };
-  }, [isAutoCrossfading, autoTarget, autoDuration, setCrossfader, stopAutoCrossfade]);
+  }, [isAutoCrossfading, autoTarget, autoDuration, setCrossfader, stopAutoCrossfade, setEQLo, setEQMid, setEQHi, setFilter]);
 
   const handleManualCrossfader = (val: number) => {
     if (isAutoCrossfading) stopAutoCrossfade();
@@ -238,26 +298,44 @@ export default function MixerCenter({ isLibraryOpen = true }: MixerCenterProps) 
           </button>
         </div>
 
-        {/* Crossfader Curve Buttons */}
-        <div className="flex gap-1.5 mt-0.5 w-full">
-          {(["CUT", "LIN", "CRV"] as const).map((c) => {
-            const isSelected = crossfaderCurve === c;
-            return (
-              <button
-                key={c}
-                onClick={() => setCrossfaderCurve(c)}
-                style={{
-                  borderColor: isSelected ? "#ff6b00" : "#2a2a3d",
-                  color: isSelected ? "#ff6b00" : "#777790",
-                  backgroundColor: isSelected ? "#ff6b0015" : "transparent",
-                  boxShadow: isSelected ? "0 0 8px rgba(255,107,0,0.3)" : "none",
-                }}
-                className="flex-1 px-1.5 py-0.5 text-[8.5px] font-mono font-black border rounded-md cursor-pointer tracking-wider hover:text-white transition-colors"
-              >
-                {c}
-              </button>
-            );
-          })}
+        {/* Crossfader Curve & Smart EQ Buttons */}
+        <div className="flex gap-1.5 mt-1 w-full items-center">
+          <div className="flex flex-1 gap-1">
+            {(["CUT", "LIN", "CRV"] as const).map((c) => {
+              const isSelected = crossfaderCurve === c;
+              return (
+                <button
+                  key={c}
+                  onClick={() => setCrossfaderCurve(c)}
+                  style={{
+                    borderColor: isSelected ? "#ff6b00" : "#2a2a3d",
+                    color: isSelected ? "#ff6b00" : "#777790",
+                    backgroundColor: isSelected ? "#ff6b0015" : "transparent",
+                    boxShadow: isSelected ? "0 0 8px rgba(255,107,0,0.3)" : "none",
+                  }}
+                  className="flex-1 px-1 py-0.5 text-[8px] font-mono font-black border rounded-md cursor-pointer tracking-wider hover:text-white transition-colors"
+                >
+                  {c}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Smart EQ Low-End Swap toggle */}
+          <button
+            onClick={() => setSmartEQ(!isSmartEQ)}
+            style={{
+              borderColor: isSmartEQ ? "#00ff88" : "#2a2a3d",
+              color: isSmartEQ ? "#00ff88" : "#777790",
+              backgroundColor: isSmartEQ ? "#00ff8815" : "transparent",
+              boxShadow: isSmartEQ ? "0 0 8px rgba(0,255,136,0.3)" : "none",
+            }}
+            className="px-2 py-0.5 text-[8px] font-mono font-black border rounded-md cursor-pointer tracking-wider hover:text-white transition-all flex items-center gap-1 shrink-0"
+            title="Smart EQ: Automates Low-End Bass Swap and Filter sweep during transitions"
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${isSmartEQ ? "bg-[#00ff88] animate-pulse" : "bg-[#555570]"}`} />
+            SMART EQ
+          </button>
         </div>
       </div>
 

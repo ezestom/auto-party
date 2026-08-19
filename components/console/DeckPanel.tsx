@@ -9,6 +9,7 @@ import Fader from "../ui/Fader";
 import Waveform from "./Waveform";
 import { db } from "../../lib/db/dexie";
 import { getAudioEngine } from "../../lib/audio/AudioEngine";
+import { SAMPLER_PADS, samplerEngine } from "../../lib/audio/SamplerEngine";
 import { RotateCcw } from "lucide-react";
 
 interface DeckPanelProps {
@@ -319,7 +320,12 @@ export default function DeckPanel({ deckId, color, isLibraryOpen = true }: DeckP
           {Array.from({ length: 4 }).map((_, i) => {
             const isPressed = pressedPad === i;
             const padColors = deckId === "A" ? PAD_COLORS_A : PAD_COLORS_B;
-            const padColor = padColors[i];
+            
+            // Sampler info (Deck A maps 0..3, Deck B maps 4..7)
+            const sampleIdx = isLeft ? i : i + 4;
+            const sample = SAMPLER_PADS[sampleIdx];
+
+            let padColor = activeMode === "SAMPLER" && sample ? sample.color : padColors[i];
 
             const hasCue = activeMode === "HOT CUE" && deck.hotCues && deck.hotCues[i];
             const cueColor = hasCue ? deck.hotCues[i]?.color : null;
@@ -330,7 +336,9 @@ export default function DeckPanel({ deckId, color, isLibraryOpen = true }: DeckP
             // Border styling
             let borderColor = "#2a2a3d";
             if (isPressed) {
-              borderColor = padColor;
+              borderColor = "#ffffff";
+            } else if (activeMode === "SAMPLER" && sample) {
+              borderColor = `${sample.color}70`;
             } else if (hasCue && cueColor) {
               borderColor = cueColor;
             } else if (isLoopActiveSize) {
@@ -341,6 +349,8 @@ export default function DeckPanel({ deckId, color, isLibraryOpen = true }: DeckP
             let background = "linear-gradient(145deg, #242436 0%, #181828 40%, #121220 100%)";
             if (isPressed) {
               background = padColor;
+            } else if (activeMode === "SAMPLER" && sample) {
+              background = `linear-gradient(145deg, ${sample.color}35 0%, ${sample.color}15 60%, #121220 100%)`;
             } else if (hasCue && cueColor) {
               background = `linear-gradient(145deg, ${cueColor}30 0%, ${cueColor}12 60%, #121220 100%)`;
             } else if (isLoopActiveSize) {
@@ -351,6 +361,8 @@ export default function DeckPanel({ deckId, color, isLibraryOpen = true }: DeckP
             let textColor = "#9999b5";
             if (isPressed) {
               textColor = "#000000";
+            } else if (activeMode === "SAMPLER" && sample) {
+              textColor = sample.color;
             } else if (hasCue && cueColor) {
               textColor = cueColor;
             } else if (isLoopActiveSize) {
@@ -359,6 +371,13 @@ export default function DeckPanel({ deckId, color, isLibraryOpen = true }: DeckP
 
             const handlePadPress = async (e: React.PointerEvent) => {
               setPressedPad(i);
+
+              // 1. SAMPLER MODE: triggers instant synthesized party effect at 0ms latency
+              if (activeMode === "SAMPLER" && sample) {
+                samplerEngine.trigger(sample.id);
+                return;
+              }
+
               if (!deck.track) return;
 
               const isShift = e.shiftKey;
@@ -448,23 +467,38 @@ export default function DeckPanel({ deckId, color, isLibraryOpen = true }: DeckP
                   background,
                   boxShadow: isPressed
                     ? `0 0 16px ${padColor}a0, inset 0 0 12px ${padColor}60`
+                    : activeMode === "SAMPLER"
+                    ? `0 0 10px ${padColor}35`
                     : hasCue || isLoopActiveSize
                     ? `0 0 10px ${textColor}40`
                     : "inset 0 1px 0 rgba(255,255,255,0.08), 0 3px 10px rgba(0,0,0,0.65)",
                   transform: isPressed ? "scale(0.95)" : "scale(1)",
                 }}
+                title={activeMode === "SAMPLER" && sample ? `${sample.label} (${sample.description})` : undefined}
               >
-                <span
-                  className="pad-num"
-                  style={{
-                    fontSize: "12px",
-                    color: textColor,
-                    transition: "color 0.05s",
-                    userSelect: "none",
-                  }}
-                >
-                  {i + 1}
-                </span>
+                {activeMode === "SAMPLER" && sample ? (
+                  <div className="flex flex-col items-center justify-center leading-none gap-0.5 pointer-events-none">
+                    <span className="text-[10px] leading-none">{sample.icon}</span>
+                    <span
+                      className="text-[7.5px] font-mono font-black tracking-tight"
+                      style={{ color: isPressed ? "#000" : textColor }}
+                    >
+                      {sample.shortLabel}
+                    </span>
+                  </div>
+                ) : (
+                  <span
+                    className="pad-num"
+                    style={{
+                      fontSize: "12px",
+                      color: textColor,
+                      transition: "color 0.05s",
+                      userSelect: "none",
+                    }}
+                  >
+                    {i + 1}
+                  </span>
+                )}
               </button>
             );
           })}

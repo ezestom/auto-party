@@ -8,14 +8,16 @@ import Laser from "../ui/Laser";
 import VJMiniPlayer from "../vj/VJMiniPlayer";
 import AIAutoDJButton from "../ai/AIAutoDJButton";
 import APIKeyModal from "../ai/APIKeyModal";
+import DJMCModal from "../ai/DJMCModal";
 import SettingsModal from "../settings/SettingsModal";
 import { useDeckStore } from "../../stores/deckStore";
 import { useMixerStore } from "../../stores/mixerStore";
 import { useVJStore } from "../../stores/vjStore";
 import { useAIDJStore } from "../../stores/aiDJStore";
 import { useSettingsStore } from "../../stores/settingsStore";
-import { Music, Radio, Cpu, Wifi, Zap, Tv, Settings } from "lucide-react";
+import { Music, Radio, Cpu, Wifi, Zap, Tv, Settings, Mic } from "lucide-react";
 import { getAudioEngine } from "../../lib/audio/AudioEngine";
+import { vjChannel } from "../../lib/vj/vjChannel";
 
 export default function DJConsole() {
   const deckA = useDeckStore((s) => s.decks.A);
@@ -28,6 +30,7 @@ export default function DJConsole() {
 
   const [isLibraryOpen, setIsLibraryOpen] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
+  const [isMCOpen, setIsMCOpen] = useState(false);
   const [clockTime, setClockTime] = useState("");
   const [isAudioReady, setIsAudioReady] = useState(false);
 
@@ -39,9 +42,10 @@ export default function DJConsole() {
 
   const currColorRef = useRef<[number, number, number]>([1.0, 0.42, 0.0]);
   const currIntensityRef = useRef<number>(0);
+  const laserBoostRef = useRef<number>(0);
   const animFrameRef = useRef<number | null>(null);
 
-  // Audio Context auto-resume gesture listener
+  // Audio Context auto-resume gesture listener & VJ channel drop flash hook
   useEffect(() => {
     const handleGesture = () => {
       const engine = getAudioEngine();
@@ -55,20 +59,31 @@ export default function DJConsole() {
     window.addEventListener("pointerdown", handleGesture, { once: true });
     window.addEventListener("keydown", handleGesture, { once: true });
 
+    const unsubscribeVJ = vjChannel.subscribe((msg) => {
+      if (msg.type === "DROP_FLASH") {
+        laserBoostRef.current = 1.2;
+      }
+    });
+
     return () => {
       window.removeEventListener("pointerdown", handleGesture);
       window.removeEventListener("keydown", handleGesture);
+      unsubscribeVJ();
     };
   }, []);
 
-  // Smooth Laser Animation Loop (Lerp color mixing & intensity fade)
+  // Smooth Laser Animation Loop (Lerp color mixing & intensity fade + Drop Burst)
   useEffect(() => {
     const animateLaser = () => {
       const playingA = deckA.isPlaying;
       const playingB = deckB.isPlaying;
 
       // Target Intensity: 1.0 if any deck is playing, 0.0 (Laser OFF) if both paused
-      const targetIntensity = playingA || playingB ? 1.0 : 0.0;
+      let targetIntensity = playingA || playingB ? 1.0 : 0.0;
+      if (laserBoostRef.current > 0.01) {
+        targetIntensity += laserBoostRef.current * 0.8;
+        laserBoostRef.current *= 0.94; // Decay boost
+      }
 
       // Calculate Target Color weights based on playing decks and crossfader/channel volume
       let weightA = 0;
@@ -119,7 +134,7 @@ export default function DJConsole() {
           Math.max(0, Math.min(1, currColorRef.current[1])),
           Math.max(0, Math.min(1, currColorRef.current[2])),
         ],
-        intensity: Math.max(0, Math.min(1, currIntensityRef.current)),
+        intensity: Math.max(0, Math.min(1.8, currIntensityRef.current)),
       });
 
       animFrameRef.current = requestAnimationFrame(animateLaser);
@@ -181,6 +196,26 @@ export default function DJConsole() {
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, []);
+
+  // Broadcast live BPM and dominant deck color to VJ window automatically
+  useEffect(() => {
+    const activeDeck = crossfader <= 0.5 ? "A" : "B";
+    const dominantDeck = activeDeck === "A" ? deckA : deckB;
+    const currentBpm = dominantDeck.track?.bpm || dominantDeck.bpm || 128;
+    const isPlaying = deckA.isPlaying || deckB.isPlaying;
+
+    vjChannel.send({
+      type: "BEAT_PULSE",
+      bpm: currentBpm,
+      color: activeDeck === "A" ? "#ff6b00" : "#00d4ff",
+    });
+
+    if (isPlaying) {
+      vjChannel.send({ type: "PLAY", bpm: currentBpm });
+    } else {
+      vjChannel.send({ type: "PAUSE" });
+    }
+  }, [deckA.isPlaying, deckB.isPlaying, deckA.bpm, deckB.bpm, deckA.track?.bpm, deckB.track?.bpm, crossfader]);
 
   const handleRecordToggle = async () => {
     const nextState = !isRecording;
@@ -326,6 +361,21 @@ export default function DJConsole() {
               Library
             </button>
             <AIAutoDJButton />
+            <button
+              id="dj-mc-btn"
+              onClick={() => setIsMCOpen(true)}
+              style={{
+                borderColor: "#ff950070",
+                color: "#ff9500",
+                backgroundColor: "#ff950018",
+                boxShadow: "0 0 12px rgba(255,149,0,0.25)",
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-mono font-black tracking-wider rounded-lg border cursor-pointer hover:bg-[#ff9500]25 hover:text-white uppercase transition-all"
+              title="Abrir DJ MC / Host en vivo (Locutor con Voicebox y Arenga de Fiesta)"
+            >
+              <Mic size={12} className="text-[#ff9500]" />
+              DJ MC
+            </button>
             <VJMiniPlayer />
             <button
               id="vj-display-btn"
@@ -465,6 +515,7 @@ export default function DJConsole() {
       </div>
       <APIKeyModal />
       <SettingsModal />
+      <DJMCModal isOpen={isMCOpen} onClose={() => setIsMCOpen(false)} />
     </Laser>
   );
 }

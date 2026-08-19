@@ -1,7 +1,7 @@
 "use client";
 
 export interface VJStateMessage {
-  type: "SET_VIDEO" | "PLAY" | "PAUSE" | "BEAT_PULSE" | "SET_EFFECT" | "SYNC_TIME";
+  type: "SET_VIDEO" | "PLAY" | "PAUSE" | "BEAT_PULSE" | "SET_EFFECT" | "SYNC_TIME" | "DROP_FLASH";
   videoId?: string;
   videoUrl?: string;
   videoTitle?: string;
@@ -9,6 +9,7 @@ export interface VJStateMessage {
   effect?: "NORMAL" | "STROBE" | "GLITCH" | "NEON_WAVE";
   bpm?: number;
   time?: number;
+  dropText?: string;
 }
 
 const CHANNEL_NAME = "eze_mix_vj_channel";

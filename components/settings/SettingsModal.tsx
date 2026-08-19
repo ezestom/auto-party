@@ -268,6 +268,26 @@ export default function SettingsModal() {
                   <option value={16}>16 Segundos (Progresiva)</option>
                 </select>
               </div>
+
+              {/* Voicebox Local Studio Config */}
+              <div className="p-3.5 rounded-xl border border-[#1e1e30] bg-[#0c0c16] space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-mono text-[11.5px] font-bold text-white flex items-center gap-2">
+                      Voicebox AI Voice Studio
+                      <span className="text-[8px] font-mono font-black text-[#00ff88] bg-[#00ff88]15 border border-[#00ff88]40 px-1.5 py-0.2 rounded-full">
+                        LOCAL / 100% GRATIS
+                      </span>
+                    </div>
+                    <div className="font-mono text-[9px] text-[#777790] mt-0.5">
+                      Conexión local en segundo plano (http://127.0.0.1:17423) con perfil <strong className="text-white">eze</strong>.
+                    </div>
+                  </div>
+                </div>
+                <div className="text-[8.5px] font-mono text-[#8888aa] bg-[#141422] p-2 rounded-lg border border-[#222234]">
+                  💡 <strong>Tip:</strong> Si Voicebox está abierto, la consola hablará con tu clon de voz. Si está cerrado, usará la síntesis de voz nativa del navegador con ducking automático de volumen.
+                </div>
+              </div>
             </div>
           )}
 

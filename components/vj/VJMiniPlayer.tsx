@@ -3,6 +3,7 @@
 import { useRef, useEffect } from "react";
 import usePictureInPicture from "react-use-pip";
 import { useVJStore } from "../../stores/vjStore";
+import { useDeckStore } from "../../stores/deckStore";
 import { PictureInPicture2 } from "lucide-react";
 
 export default function VJMiniPlayer() {
@@ -48,10 +49,20 @@ export default function VJMiniPlayer() {
     }
   };
 
+  const deckA = useDeckStore((s) => s.decks.A);
+  const deckB = useDeckStore((s) => s.decks.B);
+  const isMusicPlaying = deckA.isPlaying || deckB.isPlaying;
+
   return (
     <div className="flex items-center gap-2">
       {/* Real visible video preview thumbnail - required for HTML5 PiP */}
-      <div className="relative w-14 h-8 rounded overflow-hidden border border-[#33334d] bg-black shrink-0">
+      <div
+        className="relative w-14 h-8 rounded overflow-hidden border border-[#33334d] bg-black shrink-0 transition-all duration-150"
+        style={{
+          boxShadow: isMusicPlaying && activeVideo ? `0 0 10px ${activeVideo.color || "#00d4ff"}60` : "none",
+          borderColor: isMusicPlaying && activeVideo ? `${activeVideo.color || "#00d4ff"}80` : "#33334d",
+        }}
+      >
         <video
           ref={videoRef}
           src={activeVideo?.url}
@@ -59,12 +70,6 @@ export default function VJMiniPlayer() {
           loop
           muted
           playsInline
-          onTimeUpdate={(e) => {
-            const time = (e.target as HTMLVideoElement).currentTime;
-            if (Math.floor(time) % 2 === 0) {
-              useVJStore.getState().syncTime(time);
-            }
-          }}
           className="w-full h-full object-cover"
         />
       </div>
