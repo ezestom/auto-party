@@ -28,7 +28,7 @@ export default function MixerCenter({ isLibraryOpen = true }: MixerCenterProps) 
   const [fxRate, setFxRate] = useState<number>(0.5);
   const [crossfaderCurve, setCrossfaderCurve] = useState<"CUT" | "LIN" | "CRV">("LIN");
 
-  const lastAnimTimeRef = useRef(performance.now());
+  const lastAnimTimeRef = useRef(0);
   const animFrameRef = useRef<number | null>(null);
 
   const faderHeight = isLibraryOpen ? 110 : 160;

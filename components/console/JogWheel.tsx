@@ -17,8 +17,8 @@ export default function JogWheel({ deckId, color, size = 340 }: JogWheelProps) {
   const { setProgress } = useDeckStore();
 
   const svgInternalSize = 340;
-  const cx = 170;
-  const cy = 170;
+  const cx = svgInternalSize / 2;
+  const cy = svgInternalSize / 2;
   const outerR = 164;
   const innerR = 146;
   const artworkR = 81.6;
@@ -315,7 +315,7 @@ export default function JogWheel({ deckId, color, size = 340 }: JogWheelProps) {
 
       <svg
         ref={svgRef}
-        viewBox="0 0 340 340"
+        viewBox={`0 0 ${svgInternalSize} ${svgInternalSize}`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -576,7 +576,7 @@ export default function JogWheel({ deckId, color, size = 340 }: JogWheelProps) {
           className="absolute bottom-3 left-1/2 -translate-x-1/2 font-mono text-[9px] font-black tracking-widest px-2.5 py-0.5 rounded-full border bg-black/90 pointer-events-none z-20 shadow-lg animate-pulse"
           style={{ color, borderColor: color, boxShadow: `0 0 10px ${color}50` }}
         >
-          SCRATCH {velocityRef.current > 0 ? "▶▶" : "◀◀"}
+          SCRATCH ACTIVE
         </div>
       )}
     </div>

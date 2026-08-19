@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useMemo } from "react";
 import { useDeckStore } from "../../stores/deckStore";
-import { generateMockWaveformData, WaveformData } from "../../lib/audio/WaveformHelper";
+import { generateMockWaveformData } from "../../lib/audio/WaveformHelper";
 
 interface WaveformProps {
   deckId: "A" | "B";
@@ -16,16 +16,26 @@ export default function Waveform({ deckId, color }: WaveformProps) {
   const overviewCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const [cssWidth, setCssWidth] = useState(450);
-  const [waveData, setWaveData] = useState<WaveformData | null>(null);
+
+  // Compute/derive waveform peaks whenever track or BPM metadata changes
+  const waveData = useMemo(() => {
+    if (deck.track) {
+      return generateMockWaveformData(deck.track.id, deck.track.duration, deck.track.bpm);
+    }
+    // Fallback data for standby state
+    return generateMockWaveformData("standby-" + deckId, 300, deck.bpm);
+  }, [deck.track, deckId, deck.bpm]);
 
   // ── Refs for rapidly-changing deck values ──
   // These are updated on every React render but read inside rAF without causing re-mount
   const deckRef = useRef(deck);
-  deckRef.current = deck;
+  useEffect(() => {
+    deckRef.current = deck;
+  }, [deck]);
 
   // Smooth playhead interpolation refs for 60fps butter-smooth scrolling
   const smoothTimeRef = useRef(deck.currentTime);
-  const lastFrameTimeRef = useRef(performance.now());
+  const lastFrameTimeRef = useRef(0);
   const prevDeckTimeRef = useRef(deck.currentTime);
 
   // ResizeObserver for responsive width & HiDPI resolution scaling
@@ -48,22 +58,11 @@ export default function Waveform({ deckId, color }: WaveformProps) {
     prevDeckTimeRef.current = deck.currentTime;
   }, [deck.currentTime, deck.isPlaying]);
 
-  // Compute/Load mock waveform peaks when track metadata changes
-  useEffect(() => {
-    if (deck.track) {
-      const data = generateMockWaveformData(deck.track.id, deck.track.duration, deck.track.bpm);
-      setWaveData(data);
-    } else {
-      // Fallback data for standby state
-      const data = generateMockWaveformData("standby-" + deckId, 300, deck.bpm);
-      setWaveData(data);
-    }
-  }, [deck.track, deckId, deck.bpm]);
-
   // Main 60fps High-Performance & High-Definition Canvas rendering loop
   // IMPORTANT: Only depends on stable values. Reads deck state from deckRef.current
   useEffect(() => {
     let animationFrameId: number;
+    lastFrameTimeRef.current = performance.now();
 
     const render = () => {
       const now = performance.now();

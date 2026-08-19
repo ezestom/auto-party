@@ -38,34 +38,41 @@ export default function VJDisplayPage() {
   };
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("eze_mix_vj_sync");
-      let loadedFromStorage = false;
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (parsed.videoId || parsed.videoUrl) {
-            resolveVideoSource(parsed.videoId, parsed.videoUrl);
-            if (parsed.videoTitle) setVideoTitle(parsed.videoTitle);
-            if (parsed.color) setAccentColor(parsed.color);
-            loadedFromStorage = true;
-          }
-        } catch (e) {}
-      }
+    let isCancelled = false;
 
-      if (!loadedFromStorage) {
-        db.videos
-          .toArray()
-          .then((all) => {
-            if (all.length > 0) {
+    const loadInitialState = async () => {
+      let loadedFromStorage = false;
+
+      if (typeof window !== "undefined") {
+        const saved = localStorage.getItem("eze_mix_vj_sync");
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            if (parsed.videoId || parsed.videoUrl) {
+              await resolveVideoSource(parsed.videoId, parsed.videoUrl);
+              if (!isCancelled) {
+                if (parsed.videoTitle) setVideoTitle(parsed.videoTitle);
+                if (parsed.color) setAccentColor(parsed.color);
+              }
+              loadedFromStorage = true;
+            }
+          } catch (e) {}
+        }
+
+        if (!loadedFromStorage) {
+          try {
+            const all = await db.videos.toArray();
+            if (all.length > 0 && !isCancelled) {
               const latest = all[all.length - 1];
-              resolveVideoSource(latest.id, latest.url);
+              await resolveVideoSource(latest.id, latest.url);
               setVideoTitle(latest.title);
             }
-          })
-          .catch(() => {});
+          } catch (e) {}
+        }
       }
-    }
+    };
+
+    loadInitialState();
 
     const unsubscribe = vjChannel.subscribe((msg: VJStateMessage) => {
       if (msg.type === "SET_VIDEO") {
@@ -98,6 +105,7 @@ export default function VJDisplayPage() {
     });
 
     return () => {
+      isCancelled = true;
       unsubscribe();
     };
   }, []);
