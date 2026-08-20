@@ -42,8 +42,8 @@ export default function DeckPanel({ deckId, color, isLibraryOpen = true }: DeckP
 
   const tempoStr = (deck.tempoOffset >= 0 ? "+" : "") + (deck.tempoOffset * 100).toFixed(1) + "%";
 
-  const jogSize = isLibraryOpen ? 210 : 290;
-  const faderLen = isLibraryOpen ? 130 : 190;
+  const jogSize = isLibraryOpen ? 220 : 320;
+  const faderLen = isLibraryOpen ? 105 : 170;
 
   const resetTempo = () => {
     setTempoOffset(deckId, 0.0);
@@ -51,7 +51,7 @@ export default function DeckPanel({ deckId, color, isLibraryOpen = true }: DeckP
 
   return (
     <div
-      className="h-full flex flex-col overflow-hidden rounded-2xl select-none transition-all duration-300 min-w-0"
+      className="h-full flex flex-col overflow-hidden rounded-2xl select-none transition-all duration-300 min-w-0 min-h-0"
       style={{
         borderColor: "#222234",
         border: "1px solid #222234",
@@ -60,7 +60,7 @@ export default function DeckPanel({ deckId, color, isLibraryOpen = true }: DeckP
       }}
     >
       {/* ── LCD SCREEN BEZEL ── */}
-      <div className="px-3 pt-2.5 pb-1.5 shrink-0">
+      <div className={`shrink-0 ${isLibraryOpen ? "px-2.5 pt-1.5 pb-0.5" : "px-3 pt-2.5 pb-1.5"}`}>
         <div
           className="relative rounded-xl overflow-hidden border border-[#28283d]"
           style={{
@@ -83,16 +83,16 @@ export default function DeckPanel({ deckId, color, isLibraryOpen = true }: DeckP
           <div className="absolute bottom-1.5 right-2 w-1.5 h-1.5 rounded-full bg-neutral-800 border border-neutral-700/60 opacity-40" />
 
           {/* 3-Column Screen Grid */}
-          <div className="grid grid-cols-12 gap-0 py-2 px-3 relative z-10 items-center">
+          <div className={`grid grid-cols-12 gap-0 relative z-10 items-center ${isLibraryOpen ? "py-1 px-2.5" : "py-2 px-3"}`}>
             
             {/* COLUMN 1: DECK & STATUS LIGHTS */}
-            <div className="col-span-3 flex flex-col gap-1 border-r border-white/10 pr-2.5">
+            <div className="col-span-3 flex flex-col gap-0.5 border-r border-white/10 pr-2">
               <div className="flex items-center">
                 <div className="leading-none min-w-0">
-                  <div className="font-mono text-[12px] font-black tracking-widest uppercase" style={{ color, textShadow: `0 0 12px ${color}50` }}>
+                  <div className="font-mono text-[11.5px] font-black tracking-widest uppercase" style={{ color, textShadow: `0 0 12px ${color}50` }}>
                     DECK {deckId}
                   </div>
-                  <div className="font-mono text-[7.5px] text-text-dim tracking-wider uppercase mt-0.5 font-bold">
+                  <div className="font-mono text-[7px] text-text-dim tracking-wider uppercase mt-0.5 font-bold">
                     {deck.isPlaying ? "PLAYING" : deck.track ? "PAUSED" : "STANDBY"}
                   </div>
                 </div>
@@ -100,7 +100,7 @@ export default function DeckPanel({ deckId, color, isLibraryOpen = true }: DeckP
 
               {/* Hardware-style LED Indicators & Key */}
               <div className="flex items-center justify-between mt-0.5 pl-0.5">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   {/* MST LED */}
                   <div className="flex items-center gap-1">
                     <div
@@ -111,7 +111,7 @@ export default function DeckPanel({ deckId, color, isLibraryOpen = true }: DeckP
                         border: "1px solid rgba(0,0,0,0.6)",
                       }}
                     />
-                    <span className="font-mono text-[7px] text-[#777790] font-black tracking-widest uppercase">MST</span>
+                    <span className="font-mono text-[6.5px] text-[#777790] font-black tracking-widest uppercase">MST</span>
                   </div>
 
                   {/* SYNC LED */}
@@ -124,13 +124,13 @@ export default function DeckPanel({ deckId, color, isLibraryOpen = true }: DeckP
                         border: "1px solid rgba(0,0,0,0.6)",
                       }}
                     />
-                    <span className="font-mono text-[7px] text-[#777790] font-black tracking-widest uppercase">SYNC</span>
+                    <span className="font-mono text-[6.5px] text-[#777790] font-black tracking-widest uppercase">SYNC</span>
                   </div>
                 </div>
 
                 {/* KEY badge */}
                 <div
-                  className="font-mono text-[8.5px] font-extrabold px-1.5 py-[0.5px] border rounded-md"
+                  className="font-mono text-[8px] font-extrabold px-1.5 py-[0.5px] border rounded-md"
                   style={{
                     color,
                     backgroundColor: `${color}18`,
@@ -143,42 +143,42 @@ export default function DeckPanel({ deckId, color, isLibraryOpen = true }: DeckP
             </div>
 
             {/* COLUMN 2: TRACK METADATA & TIME DASHBOARD */}
-            <div className="col-span-6 flex flex-col items-center px-2 text-center min-w-0">
-              <span className="font-display text-[14px] font-black text-white truncate w-full leading-none tracking-wide uppercase">
+            <div className="col-span-6 flex flex-col items-center px-1.5 text-center min-w-0">
+              <span className="font-display text-[13px] font-black text-white truncate w-full leading-none tracking-wide uppercase">
                 {deck.track ? deck.track.title : "NO TRACK LOADED"}
               </span>
-              <span className="font-mono text-[8.5px] text-[#a0a0c0] truncate w-full tracking-wider mt-0.5 uppercase font-medium">
+              <span className="font-mono text-[8px] text-[#a0a0c0] truncate w-full tracking-wider mt-0.5 uppercase font-medium">
                 {deck.track ? deck.track.artist : "SELECT FROM LIBRARY"}
               </span>
               
               {/* LCD-style Digital Time Segment */}
-              <div className="flex items-center gap-2.5 mt-1 px-2.5 py-0.5 bg-black/70 rounded-md border border-[#202035] shadow-[inset_0_1px_4px_rgba(0,0,0,0.85)]">
-                <span className="font-mono text-[7px] text-[#777795] font-extrabold uppercase tracking-wider">ELAPSED</span>
-                <span className="font-mono text-[11px] font-extrabold text-white tracking-widest leading-none">
+              <div className="flex items-center gap-2 mt-0.5 px-2 py-0.5 bg-black/70 rounded-md border border-[#202035] shadow-[inset_0_1px_4px_rgba(0,0,0,0.85)]">
+                <span className="font-mono text-[6.5px] text-[#777795] font-extrabold uppercase tracking-wider">ELAPSED</span>
+                <span className="font-mono text-[10px] font-extrabold text-white tracking-widest leading-none">
                   {deck.track ? fmt(deck.currentTime) : "0:00"}
                 </span>
-                <div className="w-px h-3 bg-[#252540]" />
-                <span className="font-mono text-[7px] text-[#777795] font-extrabold uppercase tracking-wider">REMAIN</span>
-                <span className="font-mono text-[11px] font-extrabold text-[#ffd600] tracking-widest leading-none">
+                <div className="w-px h-2.5 bg-[#252540]" />
+                <span className="font-mono text-[6.5px] text-[#777795] font-extrabold uppercase tracking-wider">REMAIN</span>
+                <span className="font-mono text-[10px] font-extrabold text-[#ffd600] tracking-widest leading-none">
                   {deck.track ? `-${fmt(deck.track.duration - deck.currentTime)}` : "-0:00"}
                 </span>
               </div>
             </div>
 
             {/* COLUMN 3: BPM & SPEED METRICS */}
-            <div className="col-span-3 flex items-center justify-end gap-2.5 border-l border-white/10 pl-2.5">
+            <div className="col-span-3 flex items-center justify-end gap-2 border-l border-white/10 pl-2">
               {/* Pitch % offset display */}
               <div className="flex flex-col items-end leading-none">
-                <span className="font-mono text-[9.5px] font-black text-white tracking-wide">{tempoStr}</span>
-                <span className="font-mono text-[6.5px] text-text-muted font-bold tracking-widest uppercase mt-0.5">PITCH</span>
+                <span className="font-mono text-[9px] font-black text-white tracking-wide">{tempoStr}</span>
+                <span className="font-mono text-[6px] text-text-muted font-bold tracking-widest uppercase mt-0.5">PITCH</span>
               </div>
 
-              <div className="w-px h-8 bg-white/10" />
+              <div className="w-px h-7 bg-white/10" />
 
               {/* Large BPM readout */}
               <div className="flex flex-col items-center leading-none">
                 <span
-                  className="font-mono text-[24px] font-black tracking-tighter leading-none"
+                  className="font-mono text-[21px] font-black tracking-tighter leading-none"
                   style={{
                     color,
                     textShadow: `0 0 12px ${color}65`,
@@ -186,7 +186,7 @@ export default function DeckPanel({ deckId, color, isLibraryOpen = true }: DeckP
                 >
                   {deck.bpm.toFixed(1)}
                 </span>
-                <span className="font-mono text-[6.5px] text-text-muted font-bold tracking-widest uppercase mt-0.5">BPM</span>
+                <span className="font-mono text-[6px] text-text-muted font-bold tracking-widest uppercase mt-0.5">BPM</span>
               </div>
             </div>
 
@@ -195,8 +195,8 @@ export default function DeckPanel({ deckId, color, isLibraryOpen = true }: DeckP
       </div>
 
       {/* ── WAVEFORM ── */}
-      <div className="w-full shrink-0 my-1">
-        <Waveform deckId={deckId} color={color} />
+      <div className={`w-full shrink-0 ${isLibraryOpen ? "my-0.5" : "my-1"}`}>
+        <Waveform deckId={deckId} color={color} isLibraryOpen={isLibraryOpen} />
       </div>
 
       {/* ── PROGRESS SEGMENTS ── */}
@@ -252,9 +252,9 @@ export default function DeckPanel({ deckId, color, isLibraryOpen = true }: DeckP
         </div>
 
         {/* EQ & Volume Faders group */}
-        <div className={`flex items-center gap-2 shrink-0 h-full max-h-full overflow-hidden ${isLeft ? "flex-row" : "flex-row-reverse"}`}>
+        <div className={`flex items-center gap-1.5 shrink-0 h-full max-h-full overflow-hidden ${isLeft ? "flex-row" : "flex-row-reverse"}`}>
           {/* Linear EQ & Filter Faders Panel */}
-          <div className="flex items-center gap-1.5 shrink-0 justify-center py-1.5 px-3 bg-black/40 rounded-xl border border-[#252538] shadow-inner h-full max-h-full overflow-hidden min-w-0">
+          <div className={`flex items-center gap-1 shrink-0 justify-center bg-black/40 rounded-xl border border-[#252538] shadow-inner h-full max-h-full overflow-hidden min-w-0 ${isLibraryOpen ? "py-1 px-2" : "py-1.5 px-3"}`}>
             <Fader value={channel.gain} onChange={(v) => setChannelGain(deckId, v)} label="Gain" color={color} vertical length={faderLen} defaultValue={0.5} />
             <Fader value={channel.eqHi} onChange={(v) => setEQHi(deckId, v)} label="Hi" color={color} vertical length={faderLen} center defaultValue={0.75} />
             <Fader value={channel.eqMid} onChange={(v) => setEQMid(deckId, v)} label="Mid" color={color} vertical length={faderLen} center defaultValue={0.75} />
@@ -263,7 +263,7 @@ export default function DeckPanel({ deckId, color, isLibraryOpen = true }: DeckP
           </div>
 
           {/* Channel Volume fader column */}
-          <div className={`flex flex-col items-center justify-between w-11 shrink-0 h-full py-1 overflow-hidden ${isLeft ? "border-l pl-2" : "border-r pr-2"} border-[#252538]`}>
+          <div className={`flex flex-col items-center justify-between w-10 shrink-0 h-full py-0.5 overflow-hidden ${isLeft ? "border-l pl-1.5" : "border-r pr-1.5"} border-[#252538]`}>
             <div className="flex-1 flex items-center justify-center h-full max-h-full overflow-hidden">
               <Fader
                 value={channel.volume}
@@ -279,26 +279,26 @@ export default function DeckPanel({ deckId, color, isLibraryOpen = true }: DeckP
       </div>
 
       {/* ── TRANSPORT BAR ── */}
-      <div className="px-3 pb-2 shrink-0">
+      <div className={`shrink-0 ${isLibraryOpen ? "px-2.5 pb-1" : "px-3 pb-2"}`}>
         <TransportBar deckId={deckId} color={color} />
       </div>
 
       {/* ── PERFORMANCE PADS ── */}
       <div
-        className="px-3 pb-2 pt-1.5 shrink-0"
+        className={`shrink-0 ${isLibraryOpen ? "px-2.5 pb-1.5 pt-1" : "px-3 pb-2 pt-1.5"}`}
         style={{ borderTop: "1px solid #222234" }}
       >
         {/* ── PAD MODE TABS ── */}
-        <div className="flex gap-1 mb-1.5">
+        <div className={`flex gap-1 ${isLibraryOpen ? "mb-1" : "mb-1.5"}`}>
           {PAD_MODES.map((m) => {
             const isActive = activeMode === m;
             return (
               <button
                 key={m}
                 onClick={() => setActiveMode(m)}
-                className={`pad-mode-tab flex-1 py-1 text-center font-mono font-black tracking-tight border rounded-lg cursor-pointer uppercase transition-all duration-150 ${isActive ? "is-active" : ""}`}
+                className={`pad-mode-tab flex-1 text-center font-mono font-black tracking-tight border rounded-lg cursor-pointer uppercase transition-all duration-150 ${isActive ? "is-active" : ""} ${isLibraryOpen ? "py-0.5" : "py-1"}`}
                 style={{
-                  fontSize: "9.5px",
+                  fontSize: isLibraryOpen ? "8.5px" : "9.5px",
                   letterSpacing: "0.06em",
                   color: isActive ? "#ffffff" : "#777790",
                   borderColor: isActive ? `${color}90` : "#2a2a3d",
@@ -316,7 +316,7 @@ export default function DeckPanel({ deckId, color, isLibraryOpen = true }: DeckP
         </div>
 
         {/* ── 1×4 PERFORMANCE PADS ── */}
-        <div className="grid grid-cols-4 gap-1.5">
+        <div className={`grid grid-cols-4 ${isLibraryOpen ? "gap-1" : "gap-1.5"}`}>
           {Array.from({ length: 4 }).map((_, i) => {
             const isPressed = pressedPad === i;
             const padColors = deckId === "A" ? PAD_COLORS_A : PAD_COLORS_B;

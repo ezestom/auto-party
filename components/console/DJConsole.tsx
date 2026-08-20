@@ -256,43 +256,41 @@ export default function DJConsole() {
   const { color: laserColor, intensity: laserIntensity } = laserParams;
 
   return (
-    <Laser
-      speed={0.4}
-      offset={isLibraryOpen ? 276 : 36}
-      color={laserColor}
-      thickness={8 * laserIntensity}
-      core={1.5 * laserIntensity}
-      radius={28 * laserIntensity}
-      glow={2.8 * laserIntensity}
-      wave={14 * laserIntensity}
-      width={0.8}
-      flicker={0.2 * laserIntensity}
-      reveal={380 * laserIntensity}
-      heat={1.5 * laserIntensity}
-      shimmer={14 * laserIntensity}
-      sparkle={0.35 * laserIntensity}
-      reactivity={1.3}
-      className="w-full h-full"
-    >
-      {/*
-       * Root: full-viewport grid with 4 rows
-       *   row 1 = header bar (46px fixed)
-       *   row 2 = console content (Decks & Mixer)
-       *   row 3 = embedded music library panel (240px / 1/4 screen)
-       *   row 4 = status bar (30px fixed)
-       */}
+    <>
       <div
-        className="select-none font-sans transition-[grid-template-rows] duration-300 ease-in-out"
-        style={{
-          display: "grid",
-          gridTemplateRows: isLibraryOpen ? "46px minmax(0, 1fr) 240px 30px" : "46px minmax(0, 1fr) 0px 30px",
-          transition: "grid-template-rows 300ms cubic-bezier(0.4, 0, 0.2, 1)",
-          height: "100dvh",
-          maxHeight: "100dvh",
-          overflow: "hidden",
-          background: "linear-gradient(180deg, #050508 0%, #08080d 100%)",
-        }}
-      >
+        className="relative w-full select-none font-sans overflow-hidden transition-[grid-template-rows] duration-300 ease-in-out"
+      style={{
+        display: "grid",
+        gridTemplateRows: isLibraryOpen ? "44px minmax(0, 1fr) 230px 28px" : "44px minmax(0, 1fr) 0px 28px",
+        transition: "grid-template-rows 300ms cubic-bezier(0.4, 0, 0.2, 1)",
+        height: "100dvh",
+        maxHeight: "100dvh",
+        background: "linear-gradient(180deg, #050508 0%, #08080d 100%)",
+      }}
+    >
+      {/* Visual Ambient Laser Beam Effect */}
+      <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden">
+        <Laser
+          speed={0.4}
+          offset={isLibraryOpen ? 260 : 32}
+          color={laserColor}
+          thickness={8 * laserIntensity}
+          core={1.5 * laserIntensity}
+          radius={28 * laserIntensity}
+          glow={2.8 * laserIntensity}
+          wave={14 * laserIntensity}
+          width={0.8}
+          flicker={0.2 * laserIntensity}
+          reveal={380 * laserIntensity}
+          heat={1.5 * laserIntensity}
+          shimmer={14 * laserIntensity}
+          sparkle={0.35 * laserIntensity}
+          reactivity={1.3}
+          className="w-full h-full"
+        >
+          <div className="w-full h-full" />
+        </Laser>
+      </div>
         {/* ══════════════════════════════
             ROW 1 — HEADER
         ══════════════════════════════ */}
@@ -446,21 +444,20 @@ export default function DJConsole() {
             ROW 2 — CONSOLE CONTENT
         ══════════════════════════════ */}
         <main
-          className="overflow-x-hidden overflow-y-auto flex items-stretch gap-2 px-2 py-1.5 min-w-0"
-          style={{ minHeight: 0 }}
+          className="overflow-hidden flex items-stretch gap-2 px-2 py-1 min-w-0 min-h-0 relative z-20 flex-1"
         >
           {/* Deck A */}
-          <div className="flex-1 min-w-[280px] overflow-hidden">
+          <div className="flex-1 min-w-[280px] overflow-hidden min-h-0 h-full">
             <DeckPanel deckId="A" color="#ff6b00" isLibraryOpen={isLibraryOpen} />
           </div>
 
           {/* Mixer Center */}
-          <div className="shrink-0 overflow-hidden min-w-[180px]">
+          <div className="shrink-0 overflow-hidden min-w-[245px] min-h-0 h-full">
             <MixerCenter isLibraryOpen={isLibraryOpen} />
           </div>
 
           {/* Deck B */}
-          <div className="flex-1 min-w-[280px] overflow-hidden">
+          <div className="flex-1 min-w-[280px] overflow-hidden min-h-0 h-full">
             <DeckPanel deckId="B" color="#00d4ff" isLibraryOpen={isLibraryOpen} />
           </div>
         </main>
@@ -468,7 +465,7 @@ export default function DJConsole() {
         {/* ══════════════════════════════
             ROW 3 — EMBEDDED SONG LIBRARY
         ══════════════════════════════ */}
-        <div className="overflow-hidden min-h-0">
+        <div className="overflow-hidden min-h-0 relative z-20">
           <LibraryPanel isOpen={isLibraryOpen} onClose={() => setIsLibraryOpen(false)} />
         </div>
 
@@ -516,6 +513,6 @@ export default function DJConsole() {
       <APIKeyModal />
       <SettingsModal />
       <DJMCModal isOpen={isMCOpen} onClose={() => setIsMCOpen(false)} />
-    </Laser>
+    </>
   );
 }

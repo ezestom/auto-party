@@ -215,15 +215,8 @@ void main () {
   float dy = uv.y - yb;
   float pxd = abs(dy) * uResolution.y;
 
-  vec3 col;
-  float alpha;
-  if (dy < 0.0 && uHasContent > 0.5) {
-    col = uBezel;
-    alpha = 1.0;
-  } else {
-    col = vec3(0.0);
-    alpha = 0.0;
-  }
+  vec3 col = vec3(0.0);
+  float alpha = 0.0;
 
   if (dy >= 0.0 && dy < uRevealH && uRevealH > 0.0) {
     float k = dy / uRevealH;

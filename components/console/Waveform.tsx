@@ -7,9 +7,10 @@ import { generateMockWaveformData } from "../../lib/audio/WaveformHelper";
 interface WaveformProps {
   deckId: "A" | "B";
   color: string;
+  isLibraryOpen?: boolean;
 }
 
-export default function Waveform({ deckId, color }: WaveformProps) {
+export default function Waveform({ deckId, color, isLibraryOpen = true }: WaveformProps) {
   const deck = useDeckStore((s) => s.decks[deckId]);
   const containerRef = useRef<HTMLDivElement>(null);
   const zoomedCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -87,16 +88,18 @@ export default function Waveform({ deckId, color }: WaveformProps) {
       if (zoomedCanvas && overviewCanvas && waveData) {
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
-        // Resize Canvas buffer to match device pixel ratio for razor sharp HiDPI rendering
+        const zoomedH = isLibraryOpen ? 52 : 82;
+        const overviewH = isLibraryOpen ? 18 : 22;
+
         const zTargetW = Math.max(1, Math.round(cssWidth * dpr));
-        const zTargetH = Math.max(1, Math.round(82 * dpr));
+        const zTargetH = Math.max(1, Math.round(zoomedH * dpr));
         if (zoomedCanvas.width !== zTargetW || zoomedCanvas.height !== zTargetH) {
           zoomedCanvas.width = zTargetW;
           zoomedCanvas.height = zTargetH;
         }
 
         const oTargetW = Math.max(1, Math.round(cssWidth * dpr));
-        const oTargetH = Math.max(1, Math.round(22 * dpr));
+        const oTargetH = Math.max(1, Math.round(overviewH * dpr));
         if (overviewCanvas.width !== oTargetW || overviewCanvas.height !== oTargetH) {
           overviewCanvas.width = oTargetW;
           overviewCanvas.height = oTargetH;
@@ -338,24 +341,28 @@ export default function Waveform({ deckId, color }: WaveformProps) {
 
     animationFrameId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [waveData, color, deckId, cssWidth]);
+  }, [waveData, color, deckId, cssWidth, isLibraryOpen]);
+
+  const zoomedH = isLibraryOpen ? 52 : 82;
+  const overviewH = isLibraryOpen ? 18 : 22;
+  const containerH = isLibraryOpen ? 80 : 115;
 
   return (
     <div
       ref={containerRef}
-      className="flex flex-col gap-1.5 w-full bg-black/95 p-1.5 border-t border-b border-[#252538] relative shadow-inner"
-      style={{ height: 115 }}
+      className="flex flex-col gap-1 w-full bg-black/95 p-1 border-t border-b border-[#252538] relative shadow-inner shrink-0"
+      style={{ height: containerH }}
     >
-      {/* Zoomed scrolling main waveform (82px) */}
+      {/* Zoomed scrolling main waveform */}
       <canvas
         ref={zoomedCanvasRef}
-        style={{ width: "100%", height: 82 }}
+        style={{ width: "100%", height: zoomedH }}
         className="w-full rounded-lg border border-[#202034] shadow-md"
       />
-      {/* Overview track waveform (22px) */}
+      {/* Overview track waveform */}
       <canvas
         ref={overviewCanvasRef}
-        style={{ width: "100%", height: 22 }}
+        style={{ width: "100%", height: overviewH }}
         className="w-full rounded-md border border-[#202034]/70"
       />
     </div>
