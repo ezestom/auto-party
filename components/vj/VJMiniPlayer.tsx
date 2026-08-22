@@ -1,20 +1,37 @@
 "use client";
 
-import { useRef, useEffect } from "react";
-import usePictureInPicture from "react-use-pip";
+import { useRef, useEffect, useState } from "react";
 import { useVJStore } from "../../stores/vjStore";
 import { useDeckStore } from "../../stores/deckStore";
 import { PictureInPicture2 } from "lucide-react";
 
 export default function VJMiniPlayer() {
-  const videoRef = useRef<HTMLVideoElement>(null) as any;
+  const videoRef = useRef<HTMLVideoElement>(null);
   const { activeVideo, isPlaying } = useVJStore();
+  const [isPipAvailable, setIsPipAvailable] = useState<boolean>(false);
+  const [isPipActive, setIsPipActive] = useState<boolean>(false);
 
-  const {
-    isPictureInPictureActive,
-    isPictureInPictureAvailable,
-    togglePictureInPicture,
-  } = usePictureInPicture(videoRef);
+  useEffect(() => {
+    if (typeof document !== "undefined" && "pictureInPictureEnabled" in document) {
+      setIsPipAvailable(document.pictureInPictureEnabled);
+    }
+  }, []);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const onEnterPip = () => setIsPipActive(true);
+    const onLeavePip = () => setIsPipActive(false);
+
+    video.addEventListener("enterpictureinpicture", onEnterPip);
+    video.addEventListener("leavepictureinpicture", onLeavePip);
+
+    return () => {
+      video.removeEventListener("enterpictureinpicture", onEnterPip);
+      video.removeEventListener("leavepictureinpicture", onLeavePip);
+    };
+  }, []);
 
   useEffect(() => {
     if (videoRef.current) {
@@ -40,9 +57,14 @@ export default function VJMiniPlayer() {
         return;
       }
 
-      if (videoRef.current) {
-        await videoRef.current.play().catch(() => {});
-        await togglePictureInPicture(!isPictureInPictureActive);
+      const video = videoRef.current;
+      if (!video) return;
+
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+      } else {
+        await video.play().catch(() => {});
+        await video.requestPictureInPicture();
       }
     } catch (err) {
       console.warn("PiP toggle caught safely:", err);
@@ -75,20 +97,20 @@ export default function VJMiniPlayer() {
       </div>
 
       {/* Trigger Picture-in-Picture Floating Window */}
-      {isPictureInPictureAvailable && (
+      {isPipAvailable && (
         <button
           onClick={handleTogglePiP}
           style={{
-            borderColor: isPictureInPictureActive ? "#00ff88" : "#00d4ff70",
-            color: isPictureInPictureActive ? "#00ff88" : "#00d4ff",
-            backgroundColor: isPictureInPictureActive ? "#00ff8818" : "#00d4ff18",
-            boxShadow: isPictureInPictureActive ? "0 0 12px rgba(0,255,136,0.3)" : "none",
+            borderColor: isPipActive ? "#00ff88" : "#00d4ff70",
+            color: isPipActive ? "#00ff88" : "#00d4ff",
+            backgroundColor: isPipActive ? "#00ff8818" : "#00d4ff18",
+            boxShadow: isPipActive ? "0 0 12px rgba(0,255,136,0.3)" : "none",
           }}
           className="flex items-center gap-1 px-2.5 py-1 text-[8px] font-mono font-black rounded border cursor-pointer hover:text-white uppercase transition-all shrink-0"
           title="Pop out floating VJ Video window (Picture-in-Picture) for Monitor 2 / Projector"
         >
           <PictureInPicture2 size={10} />
-          {isPictureInPictureActive ? "PiP ACTIVE" : "FLOAT PIP"}
+          {isPipActive ? "PiP ACTIVE" : "FLOAT PIP"}
         </button>
       )}
     </div>
