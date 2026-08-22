@@ -43,10 +43,10 @@ interface AIDJStore {
 
 // Persistent API key storage
 const STORAGE_KEY = "eze_mix_gemini_api_key";
-const DEFAULT_API_KEY = "AQ.Ab8RN6KFJBzS0gLmKf9j_wd_46k6tQLap0DYgY-GBlTFvL_C1g";
 const getStoredApiKey = (): string => {
-  if (typeof window === "undefined") return DEFAULT_API_KEY;
-  return localStorage.getItem(STORAGE_KEY) || DEFAULT_API_KEY;
+  const envKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
+  if (typeof window === "undefined") return envKey;
+  return localStorage.getItem(STORAGE_KEY) || envKey;
 };
 
 // The transition monitor interval reference
