@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { TrackMetadata } from "./deckStore";
 import { db, DbTrack } from "../lib/db/dexie";
 import { getAudioEngine } from "../lib/audio/AudioEngine";
+import { analyzeWaveform } from "../lib/audio/waveformAnalysis";
 
 export type SortField = "title" | "artist" | "bpm" | "key" | "duration";
 export type SortDirection = "asc" | "desc";
@@ -22,6 +23,8 @@ interface LibraryStore {
   history: string[]; // track ids
   importStatus: ImportStatus;
   
+  reanalyzeBpm: () => Promise<void>;
+  analysisMessage: string;
   initLibrary: () => Promise<void>;
   loadTracksFromDb: () => Promise<void>;
   setSearchQuery: (query: string) => Promise<void>;
@@ -34,6 +37,16 @@ interface LibraryStore {
 }
 
 // No mock tracks — library starts empty, user imports their own music
+
+function analyzeTempo(audioData: Float32Array, sampleRate: number): Promise<{bpm: number; confidence: number}> {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL("../lib/workers/bpm.worker.ts", import.meta.url));
+    const timer = setTimeout(() => { worker.terminate(); reject(new Error("El análisis de BPM tardó demasiado.")); }, 15000);
+    worker.onmessage = event => { clearTimeout(timer); worker.terminate(); if (event.data.error) reject(new Error(event.data.error)); else resolve(event.data); };
+    worker.onerror = () => { clearTimeout(timer); worker.terminate(); reject(new Error("No se pudo analizar el ritmo.")); };
+    worker.postMessage({audioData, sampleRate});
+  });
+}
 
 export const useLibraryStore = create<LibraryStore>((set, get) => ({
   tracks: [],
@@ -49,6 +62,29 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
     filename: "",
   },
 
+  analysisMessage: "",
+  reanalyzeBpm: async () => {
+    if (get().importStatus.active) return;
+    const rows = await db.tracks.toArray();
+    let failed = 0, detected = 0;
+    set({ analysisMessage: "", importStatus: {active:true,current:0,total:rows.length,filename:"Analizando BPM"} });
+    try {
+      const engine = getAudioEngine(); await engine.resume();
+      if (!engine.ctx) throw new Error("Motor de audio no disponible");
+      for (const [index, track] of rows.entries()) {
+        set({importStatus:{active:true,current:index+1,total:rows.length,filename:"BPM: " + track.title}});
+        try {
+          const buffer = await engine.ctx.decodeAudioData(track.audioData.slice(0));
+          const result = await analyzeTempo(buffer.getChannelData(0), buffer.sampleRate);
+          await db.tracks.update(track.id, {bpm:result.bpm,bpmConfidence:result.confidence,analysisVersion:1});
+          if (result.bpm > 0) detected++;
+        } catch { failed++; }
+      }
+      await get().loadTracksFromDb();
+      set({analysisMessage: detected + " BPM estimados; " + (rows.length-detected-failed) + " sin ritmo claro; " + failed + " errores. Los decks ya cargados conservan sus valores hasta recargarlos."});
+    } catch (error) { set({analysisMessage:error instanceof Error ? error.message : "No se pudo analizar la biblioteca."}); }
+    finally { set({importStatus:{active:false,current:0,total:0,filename:""}}); }
+  },
   initLibrary: async () => {
     // Library starts empty — user imports their own tracks
     await get().loadTracksFromDb();
@@ -133,24 +169,10 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
       const sampleRate = decodedBuffer.sampleRate;
 
       // 3. Process Peaks in Waveform Worker
-      const peaks = await new Promise<number[]>((resolve) => {
-        const worker = new Worker(new URL("../lib/workers/waveform.worker.ts", import.meta.url));
-        worker.postMessage({ audioData: channelData, peakCount: 800 });
-        worker.onmessage = (e) => {
-          resolve(e.data.peaks);
-          worker.terminate();
-        };
-      });
+      const { peaks, detailPeaks } = await analyzeWaveform(decodedBuffer);
 
       // 4. Extract BPM in BPM Worker
-      const bpm = await new Promise<number>((resolve) => {
-        const worker = new Worker(new URL("../lib/workers/bpm.worker.ts", import.meta.url));
-        worker.postMessage({ audioData: channelData, sampleRate });
-        worker.onmessage = (e) => {
-          resolve(e.data.bpm);
-          worker.terminate();
-        };
-      });
+      const { bpm, confidence } = await analyzeTempo(channelData, sampleRate);
 
       // 5. Calculate Auto-Gain (RMS normalization)
       // Target: -14 dBFS RMS (~0.2 linear) for consistent loudness
@@ -181,8 +203,8 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
       const colors = ["#ff6b00", "#00d4ff", "#ffd600", "#ff2255", "#cc44ff", "#39ff82", "#0055ff", "#ff9500"];
       const randColor = colors[Math.floor(Math.random() * colors.length)];
       
-      const keys = ["1A", "2A", "3A", "4A", "5A", "6A", "7A", "8A", "9A", "10A", "11A", "12A", "1B", "2B", "3B", "4B", "5B", "6B", "7B", "8B", "9B", "10B", "11B", "12B"];
-      const randKey = keys[Math.floor(Math.random() * keys.length)];
+      // No key detector is installed: never invent harmonic metadata.
+      const analyzedKey = "—";
 
       const trackId = "track_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
 
@@ -191,11 +213,15 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
         title,
         artist,
         bpm,
-        key: randKey,
+        bpmConfidence: confidence,
+        analysisVersion: 1,
+        key: analyzedKey,
         duration,
         color: randColor,
         audioData: arrayBuffer,
         peaks,
+        detailPeaks,
+        waveformVersion: 1,
         gainCorrection: clampedGain,
       };
 

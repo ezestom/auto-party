@@ -21,9 +21,10 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "EZE MIX — DJ Console",
+  title: "AutoParty — Free AI DJ Mixer Online",
+  applicationName: "AutoParty",
   description:
-    "EZE MIX is a professional browser-based 2-deck DJ console with real-time audio mixing, BPM sync, key detection, and scratch interaction.",
+    "Your music. Party on. Mix your own music with AutoParty, a free online DJ mixer with automatic transitions, optional AI set planning and an AI voice host.",
 };
 
 export default function RootLayout({

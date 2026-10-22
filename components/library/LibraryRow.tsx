@@ -3,9 +3,7 @@
 import { useState, useEffect } from "react";
 import { useDeckStore, TrackMetadata } from "../../stores/deckStore";
 import { useLibraryStore } from "../../stores/libraryStore";
-import { db } from "../../lib/db/dexie";
-import { getAudioEngine } from "../../lib/audio/AudioEngine";
-import { useMixerStore } from "../../stores/mixerStore";
+import { loadTrackById } from "../../lib/audio/trackLoader";
 import { Music, Check, Loader2, Lock, Trash2 } from "lucide-react";
 
 interface LibraryRowProps {
@@ -16,7 +14,6 @@ interface LibraryRowProps {
 export default function LibraryRow({ track, index }: LibraryRowProps) {
   const deckA = useDeckStore((state) => state.decks.A);
   const deckB = useDeckStore((state) => state.decks.B);
-  const { setTrack } = useDeckStore();
   const { deleteTrack } = useLibraryStore();
 
   const [confirmA, setConfirmA] = useState(false);
@@ -45,63 +42,8 @@ export default function LibraryRow({ track, index }: LibraryRowProps) {
     const startLoadTime = performance.now();
 
     try {
-      const engine = getAudioEngine();
-      // Ensure context is initialized/resumed
-      await engine.resume();
-
-      // 1. Terminate the active deck source immediately
-      engine.stop(deckId);
-
-      // 2. Fetch track from IndexedDB (including audioData and pre-computed peaks)
-      const dbTrack = await db.tracks.get(track.id);
-
-      if (dbTrack && dbTrack.audioData && dbTrack.audioData.byteLength > 0) {
-        // 3. Decode the binary audio data ArrayBuffer
-        if (engine.ctx) {
-          // Slice the ArrayBuffer to avoid consumption error
-          const audioBuffer = await engine.ctx.decodeAudioData(dbTrack.audioData.slice(0));
-          engine.loadTrack(deckId, audioBuffer);
-        }
-      } else {
-        // Fallback: Clear loaded buffer (simulated synth fallback will run if played)
-        engine.deckBuffers[deckId] = null;
-      }
-
-      // 4. Update deck state store (resets progress, time, cues, isPlaying = false)
-      setTrack(deckId, track);
-
-      // 5. Apply auto-gain correction if available
-      if (dbTrack?.gainCorrection) {
-        const normalizedGain = Math.max(0, Math.min(1, 0.75 * dbTrack.gainCorrection));
-        useMixerStore.getState().setChannelGain(deckId, normalizedGain);
-      }
-
-      // 6. Fetch and restore saved hot cues and loops from IndexedDB
-      const savedCues = await db.hotCues.where("trackId").equals(track.id).toArray();
-      const savedLoops = await db.loops.where("trackId").equals(track.id).toArray();
-
-      const { setHotCue } = useDeckStore.getState();
-      savedCues.forEach((cue) => {
-        setHotCue(deckId, cue.index, cue.time, cue.color);
-      });
-
-      if (savedLoops.length > 0) {
-        const savedLoop = savedLoops[0];
-        useDeckStore.setState((state) => {
-          const deck = state.decks[deckId];
-          return {
-            decks: {
-              ...state.decks,
-              [deckId]: {
-                ...deck,
-                loopActive: true,
-                loopLength: savedLoop.length,
-                loopStart: savedLoop.time,
-              },
-            },
-          };
-        });
-      }
+      const loaded = await loadTrackById(track.id, deckId, true);
+      if (!loaded) return;
 
       const totalLoadTime = performance.now() - startLoadTime;
       console.log(`[REQ-015a] Loaded track "${track.title}" onto Deck ${deckId} in ${totalLoadTime.toFixed(1)}ms`);
@@ -230,7 +172,7 @@ export default function LibraryRow({ track, index }: LibraryRowProps) {
 
       {/* BPM */}
       <div className="col-span-1 text-center font-mono text-[10.5px] font-extrabold text-white">
-        {track.bpm.toFixed(0)}
+        {track.bpm > 0 ? track.bpm.toFixed(0) : "—"}
       </div>
 
       {/* Key & Match Indicator */}

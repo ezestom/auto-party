@@ -9,15 +9,22 @@ import Laser from "../../components/ui/Laser";
 export default function VJDisplayPage() {
   const [videoUrl, setVideoUrl] = useState<string>("");
   const [videoTitle, setVideoTitle] = useState<string>("STANDBY — NO VIDEO LOADED");
-  const [accentColor, setAccentColor] = useState<string>("#ffffff");
+
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const [bpm, setBpm] = useState<number>(128);
   const [dropFlash, setDropFlash] = useState<boolean>(false);
   const [dropText, setDropText] = useState<string>("🔥 DROP 🔥");
-  const [dropColor, setDropColor] = useState<string>("#ffffff");
+
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (isPlaying) void video.play().catch(() => {});
+    else video.pause();
+  }, [videoUrl, isPlaying]);
 
   const resolveVideoSource = async (videoId?: string, fallbackUrl?: string) => {
     if (videoId) {
@@ -49,15 +56,17 @@ export default function VJDisplayPage() {
         if (saved) {
           try {
             const parsed = JSON.parse(saved);
+            if (parsed.type === "CLEAR_VIDEO") loadedFromStorage = true;
             if (parsed.videoId || parsed.videoUrl) {
               await resolveVideoSource(parsed.videoId, parsed.videoUrl);
               if (!isCancelled) {
+                setIsPlaying(parsed.playing !== false);
                 if (parsed.videoTitle) setVideoTitle(parsed.videoTitle);
                 if (parsed.bpm) setBpm(parsed.bpm);
               }
               loadedFromStorage = true;
             }
-          } catch (e) {}
+          } catch {}
         }
 
         if (!loadedFromStorage) {
@@ -68,7 +77,7 @@ export default function VJDisplayPage() {
               await resolveVideoSource(latest.id, latest.url);
               setVideoTitle(latest.title);
             }
-          } catch (e) {}
+          } catch {}
         }
       }
     };
@@ -76,7 +85,11 @@ export default function VJDisplayPage() {
     loadInitialState();
 
     const unsubscribe = vjChannel.subscribe((msg: VJStateMessage) => {
-      if (msg.type === "SET_VIDEO") {
+      if (msg.type === "CLEAR_VIDEO") {
+        setVideoUrl("");
+        setVideoTitle("STANDBY — NO VIDEO LOADED");
+        setIsPlaying(false);
+      } else if (msg.type === "SET_VIDEO") {
         resolveVideoSource(msg.videoId, msg.videoUrl);
         if (msg.videoTitle) setVideoTitle(msg.videoTitle);
         if (msg.bpm) setBpm(msg.bpm);
@@ -162,7 +175,7 @@ export default function VJDisplayPage() {
             <Tv size={28} className="text-[#00d4ff]" />
           </div>
           <span className="font-mono text-[14px] font-black text-white tracking-[4px] uppercase">
-            EZE MIX PRO — VJ DISPLAY STANDBY
+            AutoParty — VJ DISPLAY STANDBY
           </span>
           <span className="font-mono text-[10px] text-[#777795] uppercase tracking-widest max-w-sm">
             Sube un video en la biblioteca VJ (+ Import Video) para comenzar

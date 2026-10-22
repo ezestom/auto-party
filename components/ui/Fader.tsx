@@ -33,6 +33,7 @@ export default function Fader({
   const containerRef = useRef<HTMLDivElement>(null);
   const startPos = useRef(0);
   const startVal = useRef(0);
+  const activePointer = useRef<number | null>(null);
   const [actualLength, setActualLength] = useState(length);
 
   // Measure actual pixel bounds for responsive scaling
@@ -52,16 +53,19 @@ export default function Fader({
     return () => observer.disconnect();
   }, [length, vertical]);
 
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (activePointer.current !== null || e.button !== 0) return;
+    activePointer.current = e.pointerId;
     e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
     setDragging(true);
     startPos.current = vertical ? e.clientY : e.clientX;
     startVal.current = value;
   };
 
-  const handleMouseMove = useCallback(
-    (e: MouseEvent) => {
-      if (!dragging) return;
+  const handlePointerMove = useCallback(
+    (e: PointerEvent) => {
+      if (e.pointerId !== activePointer.current) return;
       const currentPos = vertical ? e.clientY : e.clientX;
       const delta = startPos.current - currentPos;
       // For vertical: dragging up (negative delta y) increases value
@@ -72,10 +76,12 @@ export default function Fader({
       const newVal = Math.max(min, Math.min(max, startVal.current + deltaPercent));
       onChange(newVal);
     },
-    [dragging, actualLength, vertical, min, max, onChange]
+    [actualLength, vertical, min, max, onChange]
   );
 
-  const handleMouseUp = useCallback(() => {
+  const handlePointerUp = useCallback((e: PointerEvent) => {
+    if (e.pointerId !== activePointer.current) return;
+    activePointer.current = null;
     setDragging(false);
   }, []);
 
@@ -94,21 +100,27 @@ export default function Fader({
 
   useEffect(() => {
     if (dragging) {
-      window.addEventListener("mousemove", handleMouseMove);
-      window.addEventListener("mouseup", handleMouseUp);
+      window.addEventListener("pointermove", handlePointerMove);
+      window.addEventListener("pointerup", handlePointerUp);
+      window.addEventListener("pointercancel", handlePointerUp);
     }
     return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
     };
-  }, [dragging, handleMouseMove, handleMouseUp]);
+  }, [dragging, handlePointerMove, handlePointerUp]);
 
   // Format value display text for popup tooltip
   const formatVal = () => {
+    if (center && label?.toLowerCase() === "filter") {
+      if (Math.abs(value - 0.5) < 0.001) return "OFF";
+      const frequency = 20 * Math.pow(1000, value < 0.5 ? value * 2 : (value - 0.5) * 2);
+      return (value < 0.5 ? "LPF " : "HPF ") + Math.round(frequency) + " Hz";
+    }
     if (center) {
-      const dbVal = Math.round((value - 0.5) * 24);
-      if (Math.abs(dbVal) < 1) return "FLAT";
-      return dbVal > 0 ? `+${dbVal}dB` : `${dbVal}dB`;
+      const dbVal = Math.round((value <= 0.75 ? -26 * (1 - value / 0.75) : 6 * ((value - 0.75) / 0.25)) * 10) / 10;
+      return (dbVal > 0 ? "+" : "") + dbVal + " dB";
     }
     return `${Math.round(value * 100)}%`;
   };
@@ -120,7 +132,7 @@ export default function Fader({
   const isModified = Math.abs(value - defaultValue) > 0.01;
 
   return (
-    <div className={`flex flex-col items-center gap-0.5 select-none relative group min-h-0 justify-center ${vertical ? "h-full max-h-full" : "w-full max-w-full"}`}>
+    <div className={`fader-control flex flex-col items-center gap-0.5 select-none relative group min-h-0 justify-center ${vertical ? "h-full max-h-full" : "w-full max-w-full"}`}>
       {/* High-visibility label header with Reset Action */}
       {label && (
         <button
@@ -129,7 +141,7 @@ export default function Fader({
             onChange(defaultValue);
           }}
           title={`Click or double-click to reset ${label}`}
-          className="flex items-center gap-1 px-1 py-0.5 rounded shrink-0 group/reset hover:bg-white/10 transition-all cursor-pointer border border-transparent hover:border-white/20"
+          className="fader-label flex items-center gap-1 px-1 py-0.5 rounded shrink-0 group/reset hover:bg-white/10 transition-all cursor-pointer border border-transparent hover:border-white/20"
         >
           <span
             className="w-1.5 h-1.5 rounded-full shrink-0"
@@ -167,7 +179,21 @@ export default function Fader({
       {/* Fader Track & Thumb Container (Responsive bounds) */}
       <div
         ref={containerRef}
-        onMouseDown={handleMouseDown}
+        role="slider"
+        tabIndex={0}
+        aria-label={label || "Fader"}
+        aria-valuemin={min}
+        aria-valuemax={max}
+        aria-valuenow={value}
+        aria-valuetext={formatVal()}
+        aria-orientation={vertical ? "vertical" : "horizontal"}
+        onKeyDown={(event) => {
+          const direction = ["ArrowUp", "ArrowRight"].includes(event.key) ? 1 : ["ArrowDown", "ArrowLeft"].includes(event.key) ? -1 : 0;
+          if (!direction && event.key !== "Home" && event.key !== "End") return;
+          event.preventDefault();
+          onChange(event.key === "Home" ? min : event.key === "End" ? max : Math.max(min, Math.min(max, value + direction * (max - min) * (event.shiftKey ? 0.001 : 0.01))));
+        }}
+        onPointerDown={handlePointerDown}
         onWheel={handleWheel}
         onDoubleClick={handleDoubleClick}
         onMouseEnter={() => setIsHovered(true)}

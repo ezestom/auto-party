@@ -64,7 +64,9 @@ const loadInitialSettings = () => {
 const saveSettings = (state: Partial<SettingsState>) => {
   if (typeof window === "undefined") return;
   try {
-    const { isOpen, activeTab, ...toSave } = state as any;
+    const toSave = { ...state };
+    delete toSave.isOpen;
+    delete toSave.activeTab;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
   } catch {}
 };

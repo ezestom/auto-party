@@ -1,6 +1,6 @@
 "use client";
 
-import Knob from "../ui/Knob";
+
 import Fader from "../ui/Fader";
 import { useMixerStore } from "../../stores/mixerStore";
 

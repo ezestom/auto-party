@@ -75,6 +75,8 @@ export const useVJStore = create<VJState>((set, get) => ({
   deleteVideo: async (id: string) => {
     try {
       await db.videos.delete(id);
+      const deleted = get().videos.find(video => video.id === id);
+      const wasActive = get().activeVideo?.id === id;
       set((state) => {
         const remaining = state.videos.filter((v) => v.id !== id);
         return {
@@ -82,6 +84,12 @@ export const useVJStore = create<VJState>((set, get) => ({
           activeVideo: state.activeVideo?.id === id ? (remaining[0] || null) : state.activeVideo,
         };
       });
+      if (wasActive) {
+        const active = get().activeVideo;
+        if (active) get().setActiveVideo(active);
+        else vjChannel.send({ type: "CLEAR_VIDEO" });
+      }
+      if (deleted?.url.startsWith("blob:")) URL.revokeObjectURL(deleted.url);
     } catch (e) {
       console.warn("Failed to delete video:", e);
     }

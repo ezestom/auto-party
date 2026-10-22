@@ -16,7 +16,7 @@ export const DJ_PHRASE_CATEGORIES: DJPhraseCategory[] = [
     name: "Saludos / Intro",
     icon: "🎉",
     phrases: [
-      "¡Buenas noches a todos! Bienvenidos a la fiesta con DJ Eze en la mezcla.",
+      "¡Buenas noches a todos! Bienvenidos a la fiesta con AutoParty en la mezcla.",
       "¡Arrancamos la noche con toda la energía! Suban el volumen.",
       "¡Gente hermosa de Bella Vista y de todos lados, que empiece la locura!",
       "¡Bienvenidos a la cabina! Hoy no duerme nadie.",
@@ -39,9 +39,9 @@ export const DJ_PHRASE_CATEGORIES: DJPhraseCategory[] = [
     name: "Firma / Tags",
     icon: "🎧",
     phrases: [
-      "¡Ezequiel en los controles, en vivo para todos ustedes!",
+      "¡AutoParty en los controles, en vivo para todos ustedes!",
       "¡Estás escuchando la mejor música, directo desde la consola!",
-      "¡DJ Eze mezclando en vivo, que suene fuerte!",
+      "¡AutoParty mezclando en vivo, que suene fuerte!",
       "¡Sonando en exclusiva para esta fiesta!",
     ],
   },
@@ -58,7 +58,7 @@ export const DJ_PHRASE_CATEGORIES: DJPhraseCategory[] = [
 ];
 
 class DJAnnouncer {
-  private djName = "DJ Eze";
+  private djName = "AutoParty";
   private profile = "eze";
   private autoAnnounceTracks = true;
 

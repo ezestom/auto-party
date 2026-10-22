@@ -8,6 +8,8 @@ export interface TrackMetadata {
   key: string;
   duration: number; // in seconds
   color: string;
+  peaks?: number[]; // Real amplitude envelope saved during import
+  detailPeaks?: number[];
 }
 
 export interface DeckStateData {
@@ -15,6 +17,7 @@ export interface DeckStateData {
   isPlaying: boolean;
   progress: number; // 0.0 to 1.0
   currentTime: number; // in seconds
+  seekRevision: number; // user seeks, separate from clock updates
   bpm: number; // active BPM (base BPM * (1 + tempoOffset))
   baseBpm: number;
   tempoOffset: number; // -0.16 to +0.16 (simulating pitch fader range)
@@ -37,6 +40,7 @@ interface DeckStore {
   setTrack: (deckId: "A" | "B", track: TrackMetadata | null) => void;
   setPlaying: (deckId: "A" | "B", playing: boolean) => void;
   setProgress: (deckId: "A" | "B", progress: number) => void;
+  updatePlaybackTime: (deckId: "A" | "B", time: number) => void;
   setCurrentTime: (deckId: "A" | "B", time: number) => void;
   setTempoOffset: (deckId: "A" | "B", offset: number) => void;
   toggleKeyLock: (deckId: "A" | "B") => void;
@@ -51,16 +55,17 @@ interface DeckStore {
   resetDeck: (deckId: "A" | "B") => void;
 }
 
-const initialDeckState = (deckId: "A" | "B"): DeckStateData => ({
+const initialDeckState = (): DeckStateData => ({
   track: null,
   isPlaying: false,
   progress: 0,
   currentTime: 0,
+  seekRevision: 0,
   bpm: 120,
   baseBpm: 120,
   tempoOffset: 0,
-  key: deckId === "A" ? "7A" : "6B",
-  keyLock: true,
+  key: "—",
+  keyLock: false,
   syncActive: false,
   isMaster: false,
   cuePoint: null,
@@ -72,8 +77,8 @@ const initialDeckState = (deckId: "A" | "B"): DeckStateData => ({
 
 export const useDeckStore = create<DeckStore>((set) => ({
   decks: {
-    A: initialDeckState("A"),
-    B: initialDeckState("B"),
+    A: initialDeckState(),
+    B: initialDeckState(),
   },
 
   setTrack: (deckId, track) =>
@@ -89,8 +94,11 @@ export const useDeckStore = create<DeckStore>((set) => ({
             track,
             baseBpm,
             bpm,
+            key: track?.key || "—",
+            syncActive: false,
             progress: 0,
             currentTime: 0,
+            seekRevision: deck.seekRevision + 1,
             isPlaying: false,
             cuePoint: null,
             hotCues: Array(8).fill(null),
@@ -115,33 +123,33 @@ export const useDeckStore = create<DeckStore>((set) => ({
   setProgress: (deckId, progress) =>
     set((state) => {
       const deck = state.decks[deckId];
+      const value = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0;
+      return { decks: { ...state.decks, [deckId]: {
+        ...deck, progress: value, currentTime: value * (deck.track?.duration || 0),
+        seekRevision: deck.seekRevision + 1,
+      } } };
+    }),
+
+  updatePlaybackTime: (deckId, time) =>
+    set((state) => {
+      const deck = state.decks[deckId];
       const duration = deck.track?.duration || 0;
-      return {
-        decks: {
-          ...state.decks,
-          [deckId]: {
-            ...deck,
-            progress: Math.max(0, Math.min(1, progress)),
-            currentTime: progress * duration,
-          },
-        },
-      };
+      const position = Number.isFinite(time) ? Math.max(0, Math.min(duration, time)) : 0;
+      if (position === deck.currentTime) return state;
+      return { decks: { ...state.decks, [deckId]: {
+        ...deck, currentTime: position, progress: duration > 0 ? position / duration : 0,
+      } } };
     }),
 
   setCurrentTime: (deckId, time) =>
     set((state) => {
       const deck = state.decks[deckId];
-      const duration = deck.track?.duration || 1;
-      return {
-        decks: {
-          ...state.decks,
-          [deckId]: {
-            ...deck,
-            currentTime: time,
-            progress: Math.max(0, Math.min(1, time / duration)),
-          },
-        },
-      };
+      const duration = deck.track?.duration || 0;
+      const position = Number.isFinite(time) ? Math.max(0, Math.min(duration, time)) : 0;
+      return { decks: { ...state.decks, [deckId]: {
+        ...deck, currentTime: position, progress: duration > 0 ? position / duration : 0,
+        seekRevision: deck.seekRevision + 1,
+      } } };
     }),
 
   setTempoOffset: (deckId, offset) =>
@@ -156,6 +164,7 @@ export const useDeckStore = create<DeckStore>((set) => ({
             ...deck,
             tempoOffset,
             bpm,
+            syncActive: false,
           },
         },
       };
@@ -173,15 +182,18 @@ export const useDeckStore = create<DeckStore>((set) => ({
     })),
 
   toggleSync: (deckId) =>
-    set((state) => ({
-      decks: {
-        ...state.decks,
-        [deckId]: {
-          ...state.decks[deckId],
-          syncActive: !state.decks[deckId].syncActive,
-        },
-      },
-    })),
+    set((state) => {
+      const deck = state.decks[deckId];
+      const other = state.decks[deckId === "A" ? "B" : "A"];
+      if (deck.syncActive) return { decks: { ...state.decks, [deckId]: { ...deck, syncActive: false } } };
+      if (!deck.track || !other.track || !(deck.baseBpm > 0) || !(other.bpm > 0)) return state;
+      const offset = other.bpm / deck.baseBpm - 1;
+      // Refuse a false SYNC indicator when the pitch range cannot match the other deck.
+      if (Math.abs(offset) > 0.160001) return state;
+      return { decks: { ...state.decks, [deckId]: {
+        ...deck, tempoOffset: offset, bpm: other.bpm, syncActive: true,
+      } } };
+    }),
 
   setMaster: (deckId) =>
     set((state) => {
@@ -221,6 +233,7 @@ export const useDeckStore = create<DeckStore>((set) => ({
           [deckId]: {
             ...deck,
             currentTime: cuePoint,
+            seekRevision: deck.seekRevision + 1,
             progress: Math.max(0, Math.min(1, cuePoint / duration)),
           },
         },
@@ -291,7 +304,7 @@ export const useDeckStore = create<DeckStore>((set) => ({
     set((state) => ({
       decks: {
         ...state.decks,
-        [deckId]: initialDeckState(deckId),
+        [deckId]: initialDeckState(),
       },
     })),
 }));

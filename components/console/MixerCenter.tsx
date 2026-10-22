@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import Fader from "../ui/Fader";
 import { useMixerStore } from "../../stores/mixerStore";
+import { useSettingsStore } from "../../stores/settingsStore";
 import { useDeckStore } from "../../stores/deckStore";
-import { Zap, RotateCcw } from "lucide-react";
+import { Zap } from "lucide-react";
 
 interface MixerCenterProps {
   isLibraryOpen?: boolean;
@@ -17,130 +18,52 @@ export default function MixerCenter({ isLibraryOpen = true }: MixerCenterProps) 
     setHeadphoneMix, setBoothVolume, toggleCue,
     isAutoCrossfading, autoTarget, autoDuration, isSmartEQ,
     triggerAutoCrossfade, stopAutoCrossfade, setAutoDuration, setSmartEQ,
-    setEQLo, setEQMid, setEQHi, setFilter,
   } = useMixerStore();
 
   const deckA = useDeckStore((s) => s.decks.A);
   const deckB = useDeckStore((s) => s.decks.B);
 
   // Local state for Beat FX & Crossfader Curve
-  const [activeFx, setActiveFx] = useState<string>("ECHO");
-  const [fxDepth, setFxDepth] = useState<number>(0.5);
-  const [fxRate, setFxRate] = useState<number>(0.5);
-  const [crossfaderCurve, setCrossfaderCurve] = useState<"CUT" | "LIN" | "CRV">("LIN");
+  const { crossfaderCurve, setCrossfaderCurve } = useSettingsStore();
 
-  const lastAnimTimeRef = useRef(0);
-  const animFrameRef = useRef<number | null>(null);
 
-  const faderHeight = isLibraryOpen ? 85 : 130;
-  const faderLen = isLibraryOpen ? 75 : 115;
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [faderHeight, setFaderHeight] = useState(104);
+  const faderLen = Math.max(64, faderHeight - 26);
 
-  // 60FPS Auto-Crossfade Interpolation Animation Loop with Smart EQ Low-End Swap
+  // Share spare vertical space across the three fader rows instead of leaving a dead gap.
   useEffect(() => {
-    if (!isAutoCrossfading || !autoTarget) return;
-
-    lastAnimTimeRef.current = performance.now();
-
-    const stepAutoCrossfade = () => {
-      const now = performance.now();
-      const dt = Math.min((now - lastAnimTimeRef.current) / 1000, 0.1);
-      lastAnimTimeRef.current = now;
-
-      const currentCross = useMixerStore.getState().crossfader;
-      const targetCross = autoTarget === "A" ? 0.0 : 1.0;
-      const speed = 1 / Math.max(0.5, autoDuration);
-
-      if (Math.abs(currentCross - targetCross) < 0.005) {
-        setCrossfader(targetCross);
-
-        // Reset EQ and filter cleanly on both decks upon transition completion
-        setEQLo("A", 0.75);
-        setEQMid("A", 0.75);
-        setEQHi("A", 0.75);
-        setFilter("A", 0.50);
-
-        setEQLo("B", 0.75);
-        setEQMid("B", 0.75);
-        setEQHi("B", 0.75);
-        setFilter("B", 0.50);
-
-        stopAutoCrossfade();
-        return;
-      }
-
-      const direction = autoTarget === "A" ? -1 : 1;
-      const nextVal = Math.max(0, Math.min(1, currentCross + direction * speed * dt));
-      setCrossfader(nextVal);
-
-      // Smart EQ parametric Low-End Bass Swap & Filter Automation
-      const activeSmartEQ = useMixerStore.getState().isSmartEQ;
-      if (activeSmartEQ) {
-        // Transition progress p from 0.0 (start) to 1.0 (destination)
-        const p = autoTarget === "B" ? nextVal : 1.0 - nextVal;
-        const inDeck = autoTarget;
-        const outDeck = autoTarget === "A" ? "B" : "A";
-
-        // 1. LOW EQ (Low-End Bass Swap curve)
-        let inLow = 0.15;
-        if (p > 0.35 && p < 0.65) {
-          const t = (p - 0.35) / 0.30;
-          const s = t * t * (3 - 2 * t);
-          inLow = 0.15 + 0.60 * s;
-        } else if (p >= 0.65) {
-          inLow = 0.75;
-        }
-
-        let outLow = 0.75;
-        if (p > 0.35 && p < 0.65) {
-          const t = (p - 0.35) / 0.30;
-          const s = t * t * (3 - 2 * t);
-          outLow = 0.75 - 0.70 * s;
-        } else if (p >= 0.65) {
-          outLow = 0.05;
-        }
-
-        // 2. MID / HI EQ:
-        const inMid = Math.min(0.75, 0.60 + 0.15 * Math.min(1, p / 0.5));
-        const inHi = Math.min(0.75, 0.65 + 0.10 * Math.min(1, p / 0.4));
-        const outMid = p > 0.5 ? Math.max(0.40, 0.75 - 0.35 * ((p - 0.5) / 0.5)) : 0.75;
-        const outHi = p > 0.5 ? Math.max(0.45, 0.75 - 0.30 * ((p - 0.5) / 0.5)) : 0.75;
-
-        // 3. High-Pass Filter sweep on outgoing track tail
-        const outFilter = p > 0.5 ? 0.50 + 0.18 * ((p - 0.5) / 0.5) : 0.50;
-
-        setEQLo(inDeck, inLow);
-        setEQMid(inDeck, inMid);
-        setEQHi(inDeck, inHi);
-        setFilter(inDeck, 0.50);
-
-        setEQLo(outDeck, outLow);
-        setEQMid(outDeck, outMid);
-        setEQHi(outDeck, outHi);
-        setFilter(outDeck, outFilter);
-      }
-
-      animFrameRef.current = requestAnimationFrame(stepAutoCrossfade);
+    const panel = panelRef.current;
+    if (!panel) return;
+    const measure = () => {
+      const rows = Array.from(panel.querySelectorAll<HTMLElement>("[data-mixer-fader-row]"));
+      if (rows.length !== 2) return;
+      const rowHeight = rows.reduce((sum, row) => sum + row.getBoundingClientRect().height, 0);
+      const contentHeight = Array.from(panel.children).reduce((sum, child) => sum + child.getBoundingClientRect().height, 0);
+      const fixedHeight = contentHeight - rowHeight;
+      const available = Math.floor((panel.clientHeight - fixedHeight - 4) / 2);
+      const next = Math.max(100, Math.min(180, available));
+      setFaderHeight(previous => Math.abs(previous - next) > 1 ? next : previous);
     };
-
-    animFrameRef.current = requestAnimationFrame(stepAutoCrossfade);
-    return () => {
-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-    };
-  }, [isAutoCrossfading, autoTarget, autoDuration, setCrossfader, stopAutoCrossfade, setEQLo, setEQMid, setEQHi, setFilter]);
+    const observer = new ResizeObserver(measure);
+    observer.observe(panel);
+    const frame = requestAnimationFrame(measure);
+    return () => { observer.disconnect(); cancelAnimationFrame(frame); };
+  }, [isLibraryOpen]);
 
   const handleManualCrossfader = (val: number) => {
     if (isAutoCrossfading) stopAutoCrossfade();
     setCrossfader(val);
   };
 
-  const FX_LIST = ["ECHO", "REVERB", "FLNGR", "FILTER", "CRUSH"];
   const crossColor = crossfader < 0.45 ? "#ff6b00" : crossfader > 0.55 ? "#00d4ff" : "#ffffff";
 
   return (
     <div
-      className="h-full flex flex-col overflow-hidden rounded-2xl select-none transition-all duration-300 min-h-0 w-full"
+      ref={panelRef}
+      className="mixer-center-panel h-full flex flex-col overflow-y-auto rounded-2xl select-none transition-all duration-300 min-h-0 w-full"
       style={{
-        width: 245,
+        width: "100%",
         border: "1px solid #222234",
         background: "linear-gradient(180deg, #12121e 0%, #0a0a12 100%)",
         boxShadow: "0 8px 32px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.06)",
@@ -158,7 +81,7 @@ export default function MixerCenter({ isLibraryOpen = true }: MixerCenterProps) 
       </div>
 
       {/* Master faders + VU */}
-      <div className={`flex gap-3.5 items-center justify-center px-3 shrink-0 transition-all duration-300 ${isLibraryOpen ? "py-1" : "py-2"}`} style={{ height: faderHeight }}>
+      <div data-mixer-fader-row className={`flex gap-3.5 items-center justify-center px-3 shrink-0 transition-all duration-300 ${isLibraryOpen ? "py-1" : "py-2"}`} style={{ height: faderHeight }}>
         <div className="flex flex-col items-center gap-0.5 h-full">
           <Fader value={masterVolume} onChange={setMasterVolume} vertical length={faderLen} color="#ff6b00" label="Mst" defaultValue={1.0} />
         </div>
@@ -194,38 +117,6 @@ export default function MixerCenter({ isLibraryOpen = true }: MixerCenterProps) 
               </div>
             );
           })}
-        </div>
-      </div>
-
-      {/* Divider */}
-      <div className="mx-3 h-px bg-[#222234] shrink-0" />
-
-      {/* Beat FX */}
-      <div className={`px-2.5 shrink-0 ${isLibraryOpen ? "py-1" : "py-1.5"}`}>
-        <span className="font-mono text-[9px] text-white tracking-widest text-center block uppercase mb-1 font-black">Beat FX</span>
-        <div className="grid grid-cols-5 gap-1 w-full">
-          {FX_LIST.map((f) => {
-            const isActive = f === activeFx;
-            return (
-              <button
-                key={f}
-                onClick={() => setActiveFx(f)}
-                style={{
-                  borderColor: isActive ? "#ff6b00" : "#2a2a3d",
-                  color: isActive ? "#ff6b00" : "#8888a0",
-                  backgroundColor: isActive ? "#ff6b0020" : "transparent",
-                  boxShadow: isActive ? "0 0 10px rgba(255,107,0,0.3)" : "none",
-                }}
-                className="py-1 text-[8.5px] font-mono font-black rounded-md border cursor-pointer tracking-wider hover:text-white transition-all text-center"
-              >
-                {f}
-              </button>
-            );
-          })}
-        </div>
-        <div className="flex gap-4 justify-center items-center mt-1 transition-all duration-300" style={{ height: faderHeight }}>
-          <Fader value={fxDepth} onChange={setFxDepth} label="Depth" color="#ff6b00" vertical length={faderLen} defaultValue={0.5} />
-          <Fader value={fxRate} onChange={setFxRate} label="Rate" color="#ff6b00" vertical length={faderLen} defaultValue={0.5} />
         </div>
       </div>
 
@@ -343,9 +234,9 @@ export default function MixerCenter({ isLibraryOpen = true }: MixerCenterProps) 
       <div className="mx-3 h-px bg-[#222234] shrink-0" />
 
       {/* Booth + Headphone Cue Faders */}
-      <div className={`flex gap-6 justify-center items-center px-3 shrink-0 ${isLibraryOpen ? "py-1" : "py-1.5"}`} style={{ height: isLibraryOpen ? 85 : 105 }}>
-        <Fader value={boothVolume} onChange={setBoothVolume} label="Booth" color="#ff6b00" vertical length={isLibraryOpen ? 75 : 95} />
-        <Fader value={headphoneVolume} onChange={setHeadphoneVolume} label="Cue Vol" color="#ff6b00" vertical length={isLibraryOpen ? 75 : 95} />
+      <div data-mixer-fader-row className={`flex gap-6 justify-center items-center px-3 shrink-0 ${isLibraryOpen ? "py-1" : "py-1.5"}`} style={{ height: faderHeight }}>
+        <Fader value={boothVolume} onChange={setBoothVolume} label="Booth" color="#ff6b00" vertical length={faderLen} />
+        <Fader value={headphoneVolume} onChange={setHeadphoneVolume} label="Cue Vol" color="#ff6b00" vertical length={faderLen} />
       </div>
 
       {/* Cue buttons */}
@@ -398,13 +289,13 @@ export default function MixerCenter({ isLibraryOpen = true }: MixerCenterProps) 
             className="absolute top-0 bottom-0 left-1/2 rounded-full -translate-x-1/2 transition-all duration-150"
             style={{
               width: `${Math.min(Math.abs(deckA.bpm - deckB.bpm) * 5, 50)}%`,
-              backgroundColor: Math.abs(deckA.bpm - deckB.bpm) < 0.1 ? "#00ff88" : "#ffd600",
+              backgroundColor: deckA.track && deckB.track && deckA.bpm > 0 && deckB.bpm > 0 && Math.abs(deckA.bpm - deckB.bpm) < 0.1 ? "#00ff88" : "#ffd600",
             }}
           />
           <div className="absolute left-1/2 top-0 bottom-0 w-px bg-white/40" />
         </div>
         <span className="font-mono text-[8px] text-center block text-white mt-1 tracking-wider font-black">
-          {Math.abs(deckA.bpm - deckB.bpm) < 0.1 ? "✓ SYNCED" : `ΔBPM ${Math.abs(deckA.bpm - deckB.bpm).toFixed(1)}`}
+          {Math.abs(deckA.bpm - deckB.bpm) < 0.1 ? "BPM SIMILARES" : `ΔBPM ${Math.abs(deckA.bpm - deckB.bpm).toFixed(1)}`}
         </span>
       </div>
     </div>

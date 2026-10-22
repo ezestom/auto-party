@@ -1,123 +1,42 @@
-# 🎧 MIXR DJ Console
+# AutoParty — Free AI DJ Mixer Online
 
-MIXR is a premium, high-performance, browser-based 2-deck DJ console. Built with Next.js 15, native Web Audio API, and Tailwind CSS, MIXR delivers a professional, low-latency, and visually stunning mixing environment entirely client-side.
+**Your music. Party on.**
 
----
+Consola de dos decks con Next.js 16, React y Web Audio. La música y la biblioteca IndexedDB se procesan en el navegador. La planificación opcional con Gemini pasa por una API privada del servidor; la clave de Google no se envía al cliente.
 
-## 🚀 Key Features
+## Iniciar
 
-*   **Symmetrical 2-Deck Mixer**: Responsive dual-deck interface styling with separate channel strips, volume faders, and tactile controls.
-*   **Low-Latency Web Audio Engine**: Direct Web Audio API node graph with 3-band EQs (Low, Mid, High), channel gains, master brickwall limiter, and PFL headphone cue routing.
-*   **Interactive SVG Jog Wheels**: Symmetrical platters featuring concentric grooves, rotating album art, and pointer-capture physics for vinyl scratching and pitch bends.
-*   **Dual 60FPS Waveform Renderers**: Dual-canvas scrolling waveform visualizations displaying a 4-bar zoomed timeline alongside static track overview playheads and hot cue/loop highlights.
-*   **Intelligent Background Analysis**: Pre-computes peak analysis vectors and detects grid beat BPMs on track import via background web workers.
-*   **IndexedDB Library & Safety Loaders**: Seamless Dexie.js integration to persist tracks and cue states. Features one-click `[ A ]` / `[ B ]` load controls with double-tap replacement warnings for active decks.
-*   **Real-time dB VU Meters**: 12-segment L/R vertical dB LED channels per deck employing instant attack, steady analog decay, and 500ms clip indicators.
-*   **Lossless Mix Recording**: Capture master output through a direct audio pipeline and trigger downloads of 16-bit PCM WAV mixes.
+Usar una versión de Node compatible con el Next.js instalado. Desde esta carpeta:
 
----
-
-## 🛠️ Tech Stack
-
-*   **Framework**: Next.js 15 (App Router, React 19)
-*   **Audio DSP**: Web Audio API & AudioWorklet processors
-*   **State Management**: Zustand
-*   **Local Database**: Dexie.js (IndexedDB wrapper)
-*   **Audio Analysis**: Essentia.js (offline BPM & beat grid detection)
-*   **Styling**: Tailwind CSS, CSS Variables
-*   **Testing**: Vitest (Unit/Integration) & Playwright (E2E)
-
----
-
-## 📁 Directory Structure
-
-```
-mixrdjconsole/
-├── app/
-│   ├── layout.tsx              # Root HTML template, CSS imports, Google Fonts (Syne, DM Mono, Space Grotesk)
-│   ├── page.tsx                # Landing redirect to /console
-│   └── console/
-│       └── page.tsx            # Console Route - renders dynamic <DJConsole /> (ssr: false)
-├── components/
-│   ├── console/
-│   │   ├── DJConsole.tsx       # Root container, connects UI to Zustand & AudioEngine
-│   │   ├── DeckPanel.tsx       # Symmetrical deck shell (Deck A & B colors)
-│   │   ├── JogWheel.tsx        # SVG Vinyl grooves + slow-rotating album art + drag-to-scratch
-│   │   ├── Waveform.tsx        # Dual canvas: scrolling zoomed view + static full-track overview
-│   │   ├── MixerCenter.tsx     # Master Vol, Headphone PFL, Beat FX placeholders, Crossfader
-│   │   ├── EQStrip.tsx         # HI, MID, LOW, GAIN rotary knobs + vertical volume fader
-│   │   ├── TransportBar.tsx    # Tactile CUE, PLAY/PAUSE, SYNC, and KEY LOCK buttons
-│   │   └── VUMeter.tsx         # 12-segment L/R vertical dB LED channels
-│   └── library/
-│       ├── LibraryPanel.tsx    # Dexie search query input, drag-and-drop well
-│       └── LibraryRow.tsx      # Track row containing REQ-015a Load-to-Deck A/B buttons
-├── lib/
-│   ├── audio/
-│   │   └── AudioEngine.ts      # Web Audio singleton graph manager
-│   ├── db/
-│   │   └── dexie.ts            # Local IndexedDB schemas and hooks
-│   └── workers/
-│       ├── waveform.worker.ts  # Pre-computes peak analysis array on track import
-│       └── bpm.worker.ts       # Runs essentia.js analysis in background thread
-├── e2e/
-│   └── console.spec.ts         # Playwright End-to-End browser tests
-├── public/
-│   └── worklets/
-│       ├── scratch.worklet.js  # AudioWorklet processor for scratch-pitch interpolation
-│       └── vocoder.worklet.js  # AudioWorklet processor for time-stretching/key-locking
-```
-
----
-
-## ⚙️ Getting Started
-
-### Prerequisites
-
-Ensure you have [Node.js](https://nodejs.org) (v18 or higher) installed.
-
-### Installation
-
-1. Clone the repository and navigate to the project directory:
-   ```bash
-   cd mixrdjconsole
-   ```
-2. Install the dependencies:
-   ```bash
-   npm install
-   ```
-
-### Development Server
-
-Run the local development server:
-```bash
+```sh
+npm install
+npm run setup:ai
 npm run dev
 ```
-Open [http://localhost:3000](http://localhost:3000) with your browser to experience the console.
 
-### Running Tests
+Abrir [la consola](http://localhost:3000). El automático local funciona sin API. Para activar Gemini, completar `GEMINI_API_KEY` en `.env.local`, reiniciar el servidor e ingresar el `AI_ACCESS_CODE` generado en **Ver conexión IA**. La prueba de conexión requiere una respuesta válida de Google.
 
-*   **Unit Tests (Vitest)**:
-    ```bash
-    npm run test
-    ```
-*   **End-to-End Tests (Playwright)**:
-    ```bash
-    npx playwright test
-    ```
+La [guía de configuración](CONFIGURACION-IA.md) detalla las variables y la publicación con Node, HTTPS y Redis para límites compartidos. Una exportación estática no ejecuta esta API. El acceso a IA es una beta con código compartido.
 
----
+## Funciones y límites
 
-## 🔮 Future Upgrades
+- Dos decks, EQ, filtros, tempo, CUE, hot cues, loops, sampler y crossfader con curvas. El jog permite variar temporalmente la velocidad.
+- Biblioteca local, BPM estimado y ondas de amplitud real con dos resoluciones. Tonalidades desconocidas se muestran como tales.
+- Modo Fiesta con cola, reproducción automática, próximo tema y fundidos/cortes. El plan identifica Gemini o el orden local por BPM; los fallos de IA conservan el modo local.
+- Auriculares y booth con dispositivos independientes cuando el navegador los admite, grabación WAV, videos y proyector.
+- DJ MC con Google TTS: tres voces, estilos de locución, anuncios personalizados, cancelación y caché de frases recientes. Comparte acceso y cuota con la planificación, y funciona también con AUTO LOCAL.
+- Gemini propone el orden y transiciones; el motor local ejecuta el audio. No hay beatgrid/fase real, detección de frases, stems ni Key Lock terminado. Cambiar tempo también cambia tonalidad.
 
-The following features are planned for future development to expand MIXR's capabilities:
+Ver [guía de controles](GUIA_CONTROLES.md), [estado y pendientes](MEJORAS-ESTADO.md) y [especificación de la API](SPEC-SERVER-AI.md). Las pruebas automatizadas no sustituyen la escucha con música y equipos reales.
 
-*   **AI Stem Separation**: Direct client-side separation (Vocal, Drums, Bass, Melody) using ONNX Runtime.
-*   **Key Detection & Harmonic Display**: Automated key extraction on track import with Camelot Wheel compatibility guides.
-*   **Beat-Synchronized Effects**: 10 performance FX modules (Echo, Reverb, Phaser, Flanger, etc.) synced to active grid tempo.
-*   **Multi-Mode Performance Pads**: Support for Auto Loop, Manual Loops, Roll, Slicer, and Sampler triggers.
-*   **WebMIDI Controller Mapping**: Custom UI to map external USB/Bluetooth DJ hardware directly to console parameters.
-*   **Beat Grid Editor**: Interactive timeline adjustments on the canvas layout to customize grid alignments.
-*   **Auto-DJ Transitions**: Algorithmic mixing queue support for hands-off sets.
-*   **Cloud Streaming Integration**: Live stream output broadcasts utilizing WHIP protocols.
-*   **WASM MP3 Encoding**: Master output compilation to MP3 format via FFmpeg WASM.
-# DJ-Console-UI
+## Verificación
+
+```sh
+npm test
+npm run lint
+npx tsc --noEmit --incremental false
+npm run build
+npx playwright test --workers=1
+```
+
+Playwright inicia su servidor con credenciales ficticias y una biblioteca aislada. Las pruebas de proveedor simulan Google; no confirman una clave real ni consumen su cuota. Para usar Chrome instalado, definir `PLAYWRIGHT_CHANNEL=chrome` antes de ejecutar Playwright.

@@ -1,7 +1,8 @@
 "use client";
 
 export interface VJStateMessage {
-  type: "SET_VIDEO" | "PLAY" | "PAUSE" | "BEAT_PULSE" | "SET_EFFECT" | "SYNC_TIME" | "DROP_FLASH";
+  type: "CLEAR_VIDEO" | "SET_VIDEO" | "PLAY" | "PAUSE" | "BEAT_PULSE" | "SET_EFFECT" | "SYNC_TIME" | "DROP_FLASH";
+  playing?: boolean;
   videoId?: string;
   videoUrl?: string;
   videoTitle?: string;
@@ -29,12 +30,17 @@ class VJChannelManager {
   }
 
   public send(msg: VJStateMessage) {
-    if (this.channel) {
-      this.channel.postMessage(msg);
-    } else if (typeof window !== "undefined") {
-      // Fallback using localStorage sync event
-      localStorage.setItem("eze_mix_vj_sync", JSON.stringify({ ...msg, _t: Date.now() }));
+    if (typeof window !== "undefined" && ["SET_VIDEO", "CLEAR_VIDEO", "PLAY", "PAUSE"].includes(msg.type)) {
+      try {
+        const previous = JSON.parse(localStorage.getItem("eze_mix_vj_sync") || "{}");
+        const snapshot = msg.type === "CLEAR_VIDEO" ? { type: "CLEAR_VIDEO" }
+          : msg.type === "SET_VIDEO" ? { ...msg, playing: true }
+          : { ...previous, playing: msg.type === "PLAY" };
+        localStorage.setItem("eze_mix_vj_sync", JSON.stringify({ ...snapshot, _t: Date.now() }));
+      } catch { /* Projection still receives live updates when storage is unavailable. */ }
     }
+    this.listeners.forEach(listener => listener(msg));
+    this.channel?.postMessage(msg);
   }
 
   public subscribe(callback: (msg: VJStateMessage) => void): () => void {
@@ -42,7 +48,7 @@ class VJChannelManager {
 
     // Fallback listener for localStorage sync
     const storageHandler = (e: StorageEvent) => {
-      if (e.key === "eze_mix_vj_sync" && e.newValue) {
+      if (!this.channel && e.key === "eze_mix_vj_sync" && e.newValue) {
         try {
           const msg = JSON.parse(e.newValue);
           callback(msg);

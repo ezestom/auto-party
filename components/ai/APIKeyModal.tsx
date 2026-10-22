@@ -1,153 +1,63 @@
 "use client";
+import { useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
+import { connectionLabels, useAIConnectionStore } from "../../stores/aiConnectionStore";
 
-import { useState } from "react";
-import { useAIDJStore } from "../../stores/aiDJStore";
-import { X, Key, Sparkles } from "lucide-react";
-
-export default function APIKeyModal() {
-  const { apiKey, setApiKey, showApiKeyModal, setShowApiKeyModal } =
-    useAIDJStore();
-  const [inputKey, setInputKey] = useState(apiKey);
-
-  if (!showApiKeyModal) return null;
-
-  const handleSave = () => {
-    setApiKey(inputKey.trim());
-    setShowApiKeyModal(false);
-  };
-
-  const handleSkip = () => {
-    setApiKey("");
-    setShowApiKeyModal(false);
-  };
-
-  return (
-    <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-md"
-      onClick={() => setShowApiKeyModal(false)}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="relative w-[420px] rounded-2xl border border-[#2a2a3d] overflow-hidden"
-        style={{
-          background:
-            "linear-gradient(180deg, #12121e 0%, #0a0a14 100%)",
-          boxShadow:
-            "0 24px 80px rgba(0,0,0,0.8), 0 0 40px rgba(255,107,0,0.15)",
-        }}
-      >
-        {/* Header */}
-        <div
-          className="flex items-center justify-between px-5 py-4"
-          style={{
-            borderBottom: "1px solid #222234",
-            background:
-              "linear-gradient(135deg, #ff6b0015 0%, transparent 60%)",
-          }}
-        >
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-[#ff6b0020] border border-[#ff6b0040] flex items-center justify-center">
-              <Sparkles size={16} className="text-[#ff6b00]" />
-            </div>
-            <div>
-              <div className="font-mono text-[13px] font-black text-white tracking-wider">
-                AI AUTO-DJ
-              </div>
-              <div className="font-mono text-[8.5px] text-[#888899] tracking-widest uppercase">
-                Google AI Studio · Gemini 2.0 Flash
-              </div>
-            </div>
-          </div>
-          <button
-            onClick={() => setShowApiKeyModal(false)}
-            className="w-7 h-7 rounded-lg border border-[#2a2a3d] flex items-center justify-center hover:bg-[#222234] transition-colors cursor-pointer"
-          >
-            <X size={14} className="text-[#888899]" />
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="px-5 py-4 space-y-4">
-          <div className="space-y-2">
-            <label className="font-mono text-[10px] text-[#aaaacc] tracking-widest uppercase font-bold block">
-              API Key de Google AI Studio
-            </label>
-            <div className="relative">
-              <Key
-                size={14}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555570]"
-              />
-              <input
-                type="password"
-                value={inputKey}
-                onChange={(e) => setInputKey(e.target.value)}
-                placeholder="AIzaSy..."
-                className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-[#2a2a3d] bg-[#0a0a16] font-mono text-[11px] text-white placeholder-[#444460] focus:border-[#ff6b00] focus:outline-none transition-colors"
-              />
-            </div>
-            <p className="font-mono text-[8.5px] text-[#666680] leading-relaxed">
-              Obtené tu API Key gratis en{" "}
-              <a
-                href="https://aistudio.google.com/apikey"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[#ff6b00] hover:underline"
-              >
-                aistudio.google.com/apikey
-              </a>
-              . La key se guarda localmente en tu navegador.
-            </p>
-          </div>
-
-          {/* Info box */}
-          <div
-            className="rounded-lg border border-[#1e1e30] p-3"
-            style={{ background: "rgba(0,212,255,0.05)" }}
-          >
-            <div className="font-mono text-[9px] text-[#00d4ff] font-bold tracking-wider uppercase mb-1">
-              ¿Qué hace el AI Auto-DJ?
-            </div>
-            <p className="font-mono text-[8.5px] text-[#8888a0] leading-relaxed">
-              Gemini analiza tu biblioteca (BPM, tonalidad, energía) y crea
-              un setlist optimizado. Mezcla automáticamente las canciones
-              con transiciones suaves sin que tengas que tocar nada.
-            </p>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div
-          className="flex gap-2.5 px-5 py-3.5"
-          style={{
-            borderTop: "1px solid #222234",
-            background: "rgba(0,0,0,0.3)",
-          }}
-        >
-          <button
-            onClick={handleSkip}
-            className="flex-1 py-2 rounded-lg border border-[#2a2a3d] font-mono text-[10px] font-black text-[#888899] tracking-wider uppercase hover:bg-[#161622] cursor-pointer transition-colors"
-          >
-            Sin API Key (BPM Sort)
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={!inputKey.trim()}
-            className="flex-1 py-2 rounded-lg border font-mono text-[10px] font-black tracking-wider uppercase cursor-pointer transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{
-              borderColor: inputKey.trim() ? "#ff6b00" : "#2a2a3d",
-              color: "#ffffff",
-              backgroundColor: inputKey.trim()
-                ? "#ff6b00"
-                : "#ff6b0020",
-              boxShadow: inputKey.trim()
-                ? "0 0 20px rgba(255,107,0,0.4)"
-                : "none",
-            }}
-          >
-            Guardar & Activar AI
-          </button>
-        </div>
+export default function AIConnectionModal() {
+  const connection = useAIConnectionStore();
+  const [accessCode, setAccessCode] = useState("");
+  const panel = useRef<HTMLDivElement>(null);
+  const busy = connection.status === "checking";
+  const show = connection.showModal, close = connection.setShowModal;
+  useEffect(() => {
+    if (!show) return;
+    const previous = document.activeElement;
+    void useAIConnectionStore.getState().refresh();
+    panel.current?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); close(false); }
+      if (event.key !== "Tab") return;
+      const elements = Array.from(panel.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled)') || []);
+      const first = elements[0], last = elements.at(-1);
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === panel.current)) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && (document.activeElement === last || document.activeElement === panel.current)) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("keydown", onKey); if (previous instanceof HTMLElement) previous.focus(); };
+  }, [show, close]);
+  if (!show) return null;
+  const button = "min-h-11 px-4 py-2 rounded-lg border border-[#34344c] text-sm font-bold disabled:opacity-40 cursor-pointer";
+  return <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 p-4 backdrop-blur-md" onClick={() => close(false)}>
+    <div ref={panel} role="dialog" aria-modal="true" aria-labelledby="ai-connection-title" tabIndex={-1}
+      onClick={event => event.stopPropagation()} className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border border-[#34344c] bg-[#10101b] p-5 text-white shadow-2xl">
+      <div className="flex items-center justify-between gap-3">
+        <h2 id="ai-connection-title" className="text-lg font-bold">Conexión IA de la fiesta</h2>
+        <button aria-label="Cerrar conexión IA" onClick={() => close(false)} className="grid size-11 place-items-center"><X size={18} /></button>
       </div>
+      <p role="status" className="mt-3 font-bold text-[#00d4ff]">{connectionLabels[connection.status]}</p>
+      {connection.checkedAt && <p className="mt-1 text-xs text-[#aaaabd]">Última respuesta: {new Date(connection.checkedAt).toLocaleTimeString()} · {connection.model}</p>}
+      <p className="mt-3 text-sm leading-6 text-[#b8b8ca]">Gemini propone el orden y los pases usando título, artista, BPM, tonalidad y duración. El audio permanece en tu dispositivo. La mezcla sigue disponible en modo local.</p>
+      {!connection.configured && <p className="mt-3 text-sm text-[#ffd181]">El organizador todavía debe habilitar la IA. Podés usar el automático local.</p>}
+      {!connection.authorized && <form className="mt-4 space-y-3" onSubmit={async event => {
+        event.preventDefault(); const code = accessCode; setAccessCode("");
+        if (await connection.connect(code)) await useAIConnectionStore.getState().test();
+      }}>
+        <label className="block text-sm" htmlFor="ai-access-code">Código de acceso</label>
+        <input id="ai-access-code" type="password" autoComplete="off" maxLength={200} value={accessCode}
+          onChange={event => setAccessCode(event.target.value)} disabled={busy || !connection.configured}
+          className="w-full min-h-11 rounded-lg border border-[#34344c] bg-black/40 px-3" />
+        <button type="submit" disabled={busy || !connection.configured || !accessCode} className={button + " w-full border-[#ff6b00]"}>Conectar y probar</button>
+      </form>}
+      {connection.message && <p role="alert" className="mt-3 text-sm text-[#ffd181]">{connection.message}</p>}
+      {connection.authorized && <div className="mt-4 flex flex-wrap gap-2">
+        <button onClick={() => void connection.test()} disabled={busy || !connection.configured} className={button}>Probar conexión</button>
+        <button onClick={() => void connection.logout()} disabled={busy} className={button}>Cerrar sesión IA</button>
+      </div>}
+      <div className="mt-5 flex flex-col gap-2">
+        <button onClick={() => { connection.setUseRemoteAI(false); close(false); }} className={button}>Usar automático local</button>
+        {connection.authorized && <button disabled={busy} onClick={() => { connection.setUseRemoteAI(true); close(false); }} className={button + " border-[#00d4ff]"}>Usar Gemini en la próxima sesión</button>}
+      </div>
+      <p className="mt-3 text-xs text-[#aaaabd]">La prueba consulta a Gemini y utiliza parte del cupo disponible. Cambiar esta preferencia no interrumpe la canción actual.</p>
     </div>
-  );
+  </div>;
 }

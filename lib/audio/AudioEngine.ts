@@ -3,6 +3,8 @@
 import { useMixerStore } from "../../stores/mixerStore";
 import { useDeckStore } from "../../stores/deckStore";
 
+import { useSettingsStore } from "../../stores/settingsStore";
+
 export class AudioEngine {
   public ctx: AudioContext | null = null;
   public initialized = false;
@@ -24,9 +26,12 @@ export class AudioEngine {
   public analysers: Record<"A" | "B", AnalyserNode | null> = { A: null, B: null };
 
   // Master / Monitor nodes
+  public musicBus: GainNode | null = null;
   public masterSummer: GainNode | null = null;
   public masterLimiter: DynamicsCompressorNode | null = null;
   public masterVolumeNode: GainNode | null = null;
+  public masterAnalyser: AnalyserNode | null = null;
+  private visualSamples = new Float32Array(1024);
   public boothVolumeNode: GainNode | null = null;
 
   public cueSummer: GainNode | null = null;
@@ -52,11 +57,20 @@ export class AudioEngine {
     }
   }
 
+  private initializing: Promise<void> | null = null;
+  private subscriptions: Array<() => void> = [];
+
   public async init() {
+    if (this.initialized) return;
+    if (!this.initializing) this.initializing = this.initialize().finally(() => { this.initializing = null; });
+    return this.initializing;
+  }
+
+  private async initialize() {
     if (this.initialized) return;
 
     try {
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      const AudioContextClass = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!AudioContextClass) {
         throw new Error("Web Audio API is not supported in this browser.");
       }
@@ -90,6 +104,20 @@ export class AudioEngine {
     }
   }
 
+  public setMusicDucking(value: number) {
+    if (!this.ctx || !this.musicBus) return;
+    this.musicBus.gain.setTargetAtTime(Math.max(0, Math.min(1, value)), this.ctx.currentTime, 0.06);
+  }
+
+  /** RMS of the audience output, including its volume; silence produces zero. */
+  public getVisualEnergy(): number {
+    if (!this.initialized || this.ctx?.state !== "running" || !this.masterAnalyser) return 0;
+    this.masterAnalyser.getFloatTimeDomainData(this.visualSamples);
+    let sum = 0;
+    for (const sample of this.visualSamples) sum += sample * sample;
+    return Math.min(1, Math.sqrt(sum / this.visualSamples.length));
+  }
+
   public async resume() {
     if (!this.ctx) {
       await this.init();
@@ -106,6 +134,8 @@ export class AudioEngine {
 
     // Master bus
     this.masterSummer = ctx.createGain();
+    this.musicBus = ctx.createGain();
+    this.musicBus.connect(this.masterSummer);
     this.masterLimiter = ctx.createDynamicsCompressor();
     this.masterVolumeNode = ctx.createGain();
     
@@ -118,11 +148,15 @@ export class AudioEngine {
     this.masterSummer.connect(this.masterLimiter);
     this.masterLimiter.connect(this.masterVolumeNode);
     this.masterVolumeNode.connect(ctx.destination);
+    // Analysis branch only: never add a second route to the speakers.
+    this.masterAnalyser = ctx.createAnalyser();
+    this.masterAnalyser.fftSize = this.visualSamples.length;
+    this.masterVolumeNode.connect(this.masterAnalyser);
 
     // Booth bus
     this.boothVolumeNode = ctx.createGain();
     this.masterLimiter.connect(this.boothVolumeNode);
-    this.boothVolumeNode.connect(ctx.destination); // For simplified web audio routing
+    // Monitor buses remain disconnected until a separate output is explicitly selected.
 
     // Headphone Cue / Monitoring bus
     this.cueSummer = ctx.createGain();
@@ -141,7 +175,7 @@ export class AudioEngine {
     // Headphone mix branches sum into headphone output
     this.headphoneMixCueNode.connect(this.headphoneOutputNode);
     this.headphoneMixMasterNode.connect(this.headphoneOutputNode);
-    this.headphoneOutputNode.connect(ctx.destination);
+    // Never leak the cue bus into the audience output.
 
     // Construct Decks
     const decks: Array<"A" | "B"> = ["A", "B"];
@@ -156,7 +190,7 @@ export class AudioEngine {
         this.scratchNodes[d] = new AudioWorkletNode(ctx, "scratch-processor");
         prevNode.connect(this.scratchNodes[d]);
         prevNode = this.scratchNodes[d];
-      } catch (e) {
+      } catch {
         console.warn(`AudioEngine: scratch-processor stub fallback used for deck ${d}`);
       }
 
@@ -164,7 +198,7 @@ export class AudioEngine {
         this.vocoderNodes[d] = new AudioWorkletNode(ctx, "vocoder-processor");
         prevNode.connect(this.vocoderNodes[d]);
         prevNode = this.vocoderNodes[d];
-      } catch (e) {
+      } catch {
         console.warn(`AudioEngine: vocoder-processor stub fallback used for deck ${d}`);
       }
 
@@ -172,7 +206,7 @@ export class AudioEngine {
         this.phaserNodes[d] = new AudioWorkletNode(ctx, "phaser-processor");
         prevNode.connect(this.phaserNodes[d]);
         prevNode = this.phaserNodes[d];
-      } catch (e) {
+      } catch {
         console.warn(`AudioEngine: phaser-processor stub fallback used for deck ${d}`);
       }
 
@@ -210,13 +244,13 @@ export class AudioEngine {
       // PFL path connection
       this.cueActiveGains[d] = ctx.createGain();
       this.cueActiveGains[d]!.gain.setValueAtTime(0.0, ctx.currentTime); // Off initially
-      this.channelVolumes[d]!.connect(this.cueActiveGains[d]!);
+      this.channelGains[d]!.connect(this.cueActiveGains[d]!);
       this.cueActiveGains[d]!.connect(this.cueSummer);
 
       // Crossfader connection path
       this.crossfaderGains[d] = ctx.createGain();
       this.channelVolumes[d]!.connect(this.crossfaderGains[d]!);
-      this.crossfaderGains[d]!.connect(this.masterSummer);
+      this.crossfaderGains[d]!.connect(this.musicBus!);
 
       // VU Meter Analyser
       this.analysers[d] = ctx.createAnalyser();
@@ -226,27 +260,38 @@ export class AudioEngine {
   }
 
   private setupStoreSubscription() {
-    useMixerStore.subscribe((state) => {
+    this.subscriptions.push(useMixerStore.subscribe((state, previous) => {
+      if (state.isAutoCrossfading !== previous.isAutoCrossfading || state.autoTarget !== previous.autoTarget || state.autoDuration !== previous.autoDuration || state.isSmartEQ !== previous.isSmartEQ) this.scheduleAutoCrossfade();
       this.updateMixerParams(state);
-    });
+    }));
+    this.subscriptions.push(useSettingsStore.subscribe((state, previous) => {
+      if (state.crossfaderCurve !== previous.crossfaderCurve) { this.scheduleAutoCrossfade(); this.updateMixerParams(useMixerStore.getState()); }
+    }));
 
-    useDeckStore.subscribe((state) => {
+    this.subscriptions.push(useDeckStore.subscribe((state, previous) => {
       if (!this.initialized || !this.ctx) return;
-      const decks: Array<"A" | "B"> = ["A", "B"];
-      for (const d of decks) {
-        const isPlaying = state.decks[d].isPlaying;
-        const currentlyPlaying = !!(this.deckSources[d] || this.simulatedNodes[d]);
-        if (isPlaying && !currentlyPlaying) {
-          const currentPos = state.decks[d].currentTime || 0;
-          this.play(d, currentPos);
-        } else if (!isPlaying && currentlyPlaying) {
-          this.stop(d);
+      for (const d of ["A", "B"] as const) {
+        const deck = state.decks[d];
+        const before = previous.decks[d];
+        if (!deck.isPlaying) {
+          if (this.deckSources[d]) this.stop(d, deck.seekRevision === before.seekRevision);
+          if (deck.seekRevision !== before.seekRevision) {
+            this.transport[d].offset = deck.currentTime;
+            this.transport[d].startedAt = this.ctx.currentTime;
+          }
+        } else if (!before.isPlaying || deck.track?.id !== before.track?.id || deck.seekRevision !== before.seekRevision) {
+          this.play(d, deck.currentTime);
+        } else if (deck.tempoOffset !== before.tempoOffset) {
+          this.setPlaybackRate(d, 1 + deck.tempoOffset);
+        }
+        if (deck.loopActive !== before.loopActive || deck.loopLength !== before.loopLength || deck.loopStart !== before.loopStart) {
+          this.updateLoop(d);
         }
       }
-    });
+    }));
   }
 
-  private updateMixerParams(state: any) {
+  private updateMixerParams(state: ReturnType<typeof useMixerStore.getState>) {
     if (!this.initialized || !this.ctx) return;
     const ctx = this.ctx;
 
@@ -259,9 +304,14 @@ export class AudioEngine {
     this.headphoneMixCueNode?.gain.setValueAtTime(1.0 - state.headphoneMix, ctx.currentTime);
     this.headphoneMixMasterNode?.gain.setValueAtTime(state.headphoneMix, ctx.currentTime);
 
-    // Crossfader constant-power curve
-    this.crossfaderGains.A?.gain.setValueAtTime(Math.cos(state.crossfader * Math.PI / 2), ctx.currentTime);
-    this.crossfaderGains.B?.gain.setValueAtTime(Math.sin(state.crossfader * Math.PI / 2), ctx.currentTime);
+    const x = Math.max(0, Math.min(1, state.crossfader));
+    const curve = useSettingsStore.getState().crossfaderCurve;
+    const gainA = curve === "LIN" ? 1 - x : curve === "CUT" ? Math.min(1, (1 - x) / 0.05) : Math.cos(x * Math.PI / 2);
+    const gainB = curve === "LIN" ? x : curve === "CUT" ? Math.min(1, x / 0.05) : Math.sin(x * Math.PI / 2);
+    if (!this.autoFade) {
+      this.crossfaderGains.A?.gain.setValueAtTime(gainA, ctx.currentTime);
+      this.crossfaderGains.B?.gain.setValueAtTime(gainB, ctx.currentTime);
+    }
 
     const decks: Array<"A" | "B"> = ["A", "B"];
     for (const d of decks) {
@@ -277,6 +327,7 @@ export class AudioEngine {
       // Cue monitor path
       this.cueActiveGains[d]?.gain.setValueAtTime(ch.cueActive ? 1.0 : 0.0, ctx.currentTime);
 
+      if (this.autoFade && state.isSmartEQ) continue;
       // Low EQ Shelf
       const dbLo = ch.eqLo <= 0.75 
         ? -26.0 * (1.0 - ch.eqLo / 0.75) 
@@ -311,125 +362,230 @@ export class AudioEngine {
     }
   }
 
-  // Playback buffer triggers (for upcoming stages)
-  public loadTrack(deckId: "A" | "B", buffer: AudioBuffer) {
-    this.deckBuffers[deckId] = buffer;
+
+  private autoFade: { startedAt: number; from: number; target: number; duration: number } | null = null;
+  private autoFadeTimer: ReturnType<typeof setInterval> | null = null;
+  private automatedParams: AudioParam[] = [];
+
+  private scheduleAutoCrossfade() {
+    if (!this.ctx || !this.initialized) return;
+    const now = this.ctx.currentTime;
+    // Cancel only parameters owned by this automation before applying current store values.
+    for (const param of this.automatedParams) param.cancelScheduledValues(now);
+    this.automatedParams = [];
+    if (this.autoFadeTimer) clearInterval(this.autoFadeTimer);
+    this.autoFadeTimer = null;
+    this.autoFade = null;
+    const state = useMixerStore.getState();
+    this.updateMixerParams(state);
+    if (!state.isAutoCrossfading || !state.autoTarget) return;
+    const from = state.crossfader, target = state.autoTarget === "A" ? 0 : 1;
+    const duration = Math.max(0.02, Math.abs(target - from) * Math.max(0.5, state.autoDuration));
+    this.autoFade = { startedAt: now, from, target, duration };
+    const schedule = (param: AudioParam | undefined, value: (p: number) => number) => {
+      if (!param) return;
+      const curve = Float32Array.from({ length: 129 }, (_, i) => value(i / 128));
+      param.cancelScheduledValues(now);
+      param.setValueCurveAtTime(curve, now, duration);
+      this.automatedParams.push(param);
+    };
+    const curve = useSettingsStore.getState().crossfaderCurve;
+    for (const deck of ["A", "B"] as const) {
+      schedule(this.crossfaderGains[deck]?.gain, p => {
+        const x = from + (target - from) * p;
+        return curve === "LIN" ? (deck === "A" ? 1 - x : x)
+          : curve === "CUT" ? Math.min(1, (deck === "A" ? 1 - x : x) / 0.05)
+          : deck === "A" ? Math.cos(x * Math.PI / 2) : Math.sin(x * Math.PI / 2);
+      });
+      if (!state.isSmartEQ) continue;
+      const incoming = deck === state.autoTarget;
+      const base = state.channels[deck];
+      const db = (value: number) => value <= 0.75 ? -26 * (1 - value / 0.75) : 6 * ((value - 0.75) / 0.25);
+      for (const [node, level, amount] of [[this.eqLows[deck], base.eqLo, 0.85], [this.eqMids[deck], base.eqMid, 0.2], [this.eqHis[deck], base.eqHi, 0.15]] as const) {
+        schedule(node?.gain, p => {
+          // Envelope starts at the user's setting and returns to it for the incoming deck.
+          const envelope = incoming ? Math.sin(Math.PI * p) : p;
+          return db(level * (1 - amount * envelope));
+        });
+      }
+    }
+    // Timers update status only; the audible transition is already scheduled in Web Audio.
+    this.autoFadeTimer = setInterval(() => this.syncAutoCrossfade(), 100);
   }
 
-  private simulatedNodes: Record<"A" | "B", { osc: OscillatorNode; modulation: OscillatorNode; oscGain: GainNode; modGain: GainNode } | null> = { A: null, B: null };
+  private syncAutoCrossfade() {
+    if (!this.ctx || !this.autoFade) return;
+    const fade = this.autoFade;
+    const p = Math.max(0, Math.min(1, (this.ctx.currentTime - fade.startedAt) / fade.duration));
+    useMixerStore.setState({ crossfader: fade.from + (fade.target - fade.from) * p,
+      ...(p >= 1 ? { isAutoCrossfading: false, autoTarget: null } : {}) });
+  }
+
+  private transport = {
+    A: { offset: 0, startedAt: 0, rate: 1 },
+    B: { offset: 0, startedAt: 0, rate: 1 },
+  };
+
+  // AudioContext time is the authority; rendering and background tabs cannot advance it.
+  public getPlaybackTime(deckId: "A" | "B"): number {
+    const clock = this.transport[deckId];
+    const source = this.deckSources[deckId];
+    const duration = this.deckBuffers[deckId]?.duration || 0;
+    let position = clock.offset;
+    if (source && this.ctx) position += Math.max(0, this.ctx.currentTime - clock.startedAt) * clock.rate;
+    if (source?.loop && source.loopEnd > source.loopStart && position >= source.loopEnd) {
+      position = source.loopStart + (position - source.loopStart) % (source.loopEnd - source.loopStart);
+    }
+    return Math.max(0, Math.min(duration, position));
+  }
+
+  public syncPlayheads() {
+    this.syncAutoCrossfade();
+    for (const d of ["A", "B"] as const) {
+      if (this.deckBuffers[d]) useDeckStore.getState().updatePlaybackTime(d, this.getPlaybackTime(d));
+    }
+  }
+
+  public loadTrack(deckId: "A" | "B", buffer: AudioBuffer) {
+    this.stop(deckId, false);
+    this.deckBuffers[deckId] = buffer;
+    this.transport[deckId] = { offset: 0, startedAt: this.ctx?.currentTime || 0, rate: 1 };
+  }
 
   public play(deckId: "A" | "B", startTime?: number) {
     const ctx = this.ctx;
-    if (!ctx) return;
-
-    this.stop(deckId);
-
-    const deckState = useDeckStore.getState().decks[deckId];
-    const startOffset = startTime ?? deckState?.currentTime ?? 0;
-
-    if (!this.deckBuffers[deckId]) {
-      // Create a simulated synthesizer node for testing/visual verification
-      const osc = ctx.createOscillator();
-      const oscGain = ctx.createGain();
-      
-      // Deck A lower pitch, Deck B higher pitch
-      osc.type = "sawtooth";
-      osc.frequency.value = deckId === "A" ? 110 : 220; // A2 or A3
-      
-      // Apply a simple LFO/amplitude modulation to simulate beats and prevent static hum
-      const modulation = ctx.createOscillator();
-      const modGain = ctx.createGain();
-      modulation.frequency.value = deckId === "A" ? 2 : 2.5; // modulate volume at 2Hz or 2.5Hz (120 or 150 BPM)
-      modGain.gain.value = 0.4;
-      
-      oscGain.gain.value = 0.15; // keep it quiet but audible/measurable
-      
-      modulation.connect(modGain);
-      modGain.connect(oscGain.gain);
-      
-      osc.connect(oscGain);
-      
-      if (this.deckChains[deckId]) {
-        oscGain.connect(this.deckChains[deckId]!);
-      }
-      
-      osc.start(0);
-      modulation.start(0);
-      
-      this.simulatedNodes[deckId] = { osc, modulation, oscGain, modGain };
+    const buffer = this.deckBuffers[deckId];
+    if (!ctx || !buffer) {
+      useDeckStore.getState().setPlaying(deckId, false);
       return;
     }
-
+    const deck = useDeckStore.getState().decks[deckId];
+    const requested = startTime ?? deck.currentTime;
+    const offset = requested >= buffer.duration ? 0 : Math.max(0, requested);
+    this.stop(deckId, false);
     const source = ctx.createBufferSource();
-    source.buffer = this.deckBuffers[deckId];
-    
-    // Connect to the entry point of the deck chain
-    if (this.deckChains[deckId]) {
-      source.connect(this.deckChains[deckId]!);
-    }
-
-    if (deckState) {
-      const speed = 1 + deckState.tempoOffset;
-      source.playbackRate.setValueAtTime(Math.max(0.01, Math.min(4.0, speed)), ctx.currentTime);
-    }
-
-    source.start(0, startOffset);
+    source.buffer = buffer;
+    source.connect(this.deckChains[deckId]!);
+    const rate = Math.max(0.01, Math.min(4, 1 + deck.tempoOffset));
+    source.playbackRate.setValueAtTime(rate, ctx.currentTime);
+    this.transport[deckId] = { offset, startedAt: ctx.currentTime, rate };
     this.deckSources[deckId] = source;
+    this.updateLoop(deckId);
+    source.onended = () => {
+      if (this.deckSources[deckId] !== source) return;
+      this.deckSources[deckId] = null;
+      source.disconnect();
+      this.transport[deckId].offset = buffer.duration;
+      useDeckStore.getState().updatePlaybackTime(deckId, buffer.duration);
+      useDeckStore.getState().setPlaying(deckId, false);
+    };
+    source.start(0, offset);
   }
 
-  public stop(deckId: "A" | "B") {
-    if (this.simulatedNodes[deckId]) {
-      try {
-        this.simulatedNodes[deckId]!.osc.stop();
-        this.simulatedNodes[deckId]!.modulation.stop();
-      } catch (e) {}
-      try {
-        this.simulatedNodes[deckId]!.osc.disconnect();
-        this.simulatedNodes[deckId]!.modulation.disconnect();
-        this.simulatedNodes[deckId]!.oscGain.disconnect();
-        this.simulatedNodes[deckId]!.modGain.disconnect();
-      } catch (e) {}
-      this.simulatedNodes[deckId] = null;
+  public stop(deckId: "A" | "B", capturePosition = true) {
+    const position = this.getPlaybackTime(deckId);
+    const source = this.deckSources[deckId];
+    this.deckSources[deckId] = null;
+    if (source) {
+      source.onended = null;
+      try { source.stop(); } catch { /* already ended */ }
+      source.disconnect();
     }
-
-    if (this.deckSources[deckId]) {
-      try {
-        this.deckSources[deckId]!.stop();
-      } catch (e) {}
-      this.deckSources[deckId]!.disconnect();
-      this.deckSources[deckId] = null;
-    }
+    this.transport[deckId].offset = position;
+    if (capturePosition) useDeckStore.getState().updatePlaybackTime(deckId, position);
   }
 
   public setPlaybackRate(deckId: "A" | "B", rate: number) {
-    if (!this.initialized || !this.ctx) return;
-    const ctx = this.ctx;
+    if (!this.ctx || !Number.isFinite(rate)) return;
+    const position = this.getPlaybackTime(deckId);
+    const clamped = Math.max(0.01, Math.min(4, rate));
+    this.transport[deckId] = { offset: position, startedAt: this.ctx.currentTime, rate: clamped };
+    this.deckSources[deckId]?.playbackRate.setValueAtTime(clamped, this.ctx.currentTime);
+  }
 
-    // 1. Modulate simulated oscillator node
-    const sim = this.simulatedNodes[deckId];
-    if (sim) {
-      const baseFreq = deckId === "A" ? 110 : 220;
-      const clampedRate = Math.max(0.01, Math.min(4.0, rate));
-      
-      sim.osc.frequency.setValueAtTime(baseFreq * clampedRate, ctx.currentTime);
-      sim.modulation.frequency.setValueAtTime((deckId === "A" ? 2 : 2.5) * clampedRate, ctx.currentTime);
-      
-      const speedVolume = Math.max(0, Math.min(0.15, 0.15 * clampedRate));
-      sim.oscGain.gain.setValueAtTime(speedVolume, ctx.currentTime);
-    }
-
-    // 2. Modulate real buffer source node
+  private updateLoop(deckId: "A" | "B") {
     const source = this.deckSources[deckId];
-    if (source) {
-      const clampedRate = Math.max(0.01, Math.min(4.0, rate));
-      source.playbackRate.setValueAtTime(clampedRate, ctx.currentTime);
+    if (!source || !this.ctx) return;
+    const position = this.getPlaybackTime(deckId);
+    const deck = useDeckStore.getState().decks[deckId];
+    const duration = this.deckBuffers[deckId]?.duration || 0;
+    const start = Math.max(0, deck.loopStart ?? 0);
+    const end = Math.min(duration, start + deck.loopLength * 60 / Math.max(1, deck.baseBpm));
+    source.loopStart = start;
+    source.loopEnd = end;
+    source.loop = deck.loopActive && deck.loopStart !== null && end > start;
+    this.transport[deckId].offset = position;
+    this.transport[deckId].startedAt = this.ctx.currentTime;
+  }
+
+  private monitorOutputs: Partial<Record<"headphones" | "booth", { audio: HTMLAudioElement; bus: MediaStreamAudioDestinationNode; id: string }>> = {};
+
+  public getMonitorOutputId(kind: "headphones" | "booth") { return this.monitorOutputs[kind]?.id || ""; }
+
+  private outputRevisions = { headphones: 0, booth: 0 };
+
+  public async setMonitorOutput(kind: "headphones" | "booth", deviceId: string) {
+    const revision = ++this.outputRevisions[kind];
+    await this.resume();
+    if (revision !== this.outputRevisions[kind]) return;
+    const node = kind === "headphones" ? this.headphoneOutputNode : this.boothVolumeNode;
+    if (!this.ctx || !node) throw new Error("El motor de audio no está disponible.");
+    const disconnect = (output: NonNullable<typeof this.monitorOutputs[typeof kind]>) => {
+      output.audio.pause();
+      output.audio.srcObject = null;
+      try { node.disconnect(output.bus); } catch { /* already disconnected */ }
+    };
+    if (!deviceId) {
+      const previous = this.monitorOutputs[kind];
+      if (previous) disconnect(previous);
+      delete this.monitorOutputs[kind];
+      return;
     }
+    const audio = new Audio();
+    if (!("setSinkId" in audio)) throw new Error("Este navegador no permite elegir una salida independiente.");
+    const bus = this.ctx.createMediaStreamDestination();
+    audio.srcObject = bus.stream;
+    const output = { audio, bus, id: deviceId };
+    try {
+      await audio.setSinkId(deviceId);
+      // Start the silent stream first; keep the working route if selection fails.
+      await audio.play();
+      if (revision !== this.outputRevisions[kind]) { disconnect(output); return; }
+      const previous = this.monitorOutputs[kind];
+      node.connect(bus);
+      this.monitorOutputs[kind] = output;
+      if (previous) disconnect(previous);
+    } catch (error) {
+      disconnect(output);
+      throw error;
+    }
+  }
+
+  public dispose() {
+    if (this.autoFadeTimer) clearInterval(this.autoFadeTimer);
+    this.autoFadeTimer = null;
+    this.subscriptions.splice(0).forEach(unsubscribe => unsubscribe());
+    this.initialized = false;
+    this.masterAnalyser?.disconnect();
+    this.masterAnalyser = null;
+    if (this.animationFrameId !== null) {
+      if (typeof this.animationFrameId === "number" && typeof window.cancelAnimationFrame === "function") window.cancelAnimationFrame(this.animationFrameId);
+      else clearTimeout(this.animationFrameId);
+    }
+    for (const d of ["A", "B"] as const) this.stop(d, false);
+    for (const kind of ["headphones", "booth"] as const) {
+      this.outputRevisions[kind]++;
+      const output = this.monitorOutputs[kind];
+      if (output) { output.audio.pause(); output.audio.srcObject = null; output.bus.disconnect(); }
+    }
+    this.monitorOutputs = {};
+    void this.ctx?.close();
   }
 
   private lastFrameTime = 0;
   private currentDb: Record<"A" | "B", number> = { A: -60, B: -60 };
   private clipTimestamp: Record<"A" | "B", number> = { A: 0, B: 0 };
-  private animationFrameId: number | null = null;
+  private animationFrameId: number | ReturnType<typeof setTimeout> | null = null;
 
   private runVUMeterLoop = () => {
     if (!this.initialized) return;
@@ -484,16 +640,14 @@ export class AudioEngine {
       setVU(d, normalized, normalized, isClipping, isClipping);
     }
 
-    const raf = typeof window !== "undefined" && typeof window.requestAnimationFrame === "function"
-      ? window.requestAnimationFrame
-      : (cb: any) => setTimeout(cb, 16);
-    
-    this.animationFrameId = raf(this.runVUMeterLoop) as any;
+    this.animationFrameId = typeof window !== "undefined" && typeof window.requestAnimationFrame === "function"
+      ? window.requestAnimationFrame(this.runVUMeterLoop)
+      : setTimeout(this.runVUMeterLoop, 16);
   };
 
   public startRecording() {
     const ctx = this.ctx;
-    if (!ctx || this.isRecording) return;
+    if (!ctx || this.isRecording) return false;
 
     this.recordedChunksL = [];
     this.recordedChunksR = [];
@@ -512,14 +666,16 @@ export class AudioEngine {
       };
 
       if (this.masterLimiter) {
-        this.masterLimiter.connect(this.recorderNode);
+        this.masterVolumeNode?.connect(this.recorderNode);
         this.recorderNode.connect(ctx.destination);
       }
       
       console.log("[AudioEngine] Lossless WAV recording started.");
+      return true;
     } catch (err) {
       console.error("[AudioEngine] Failed to start WAV recording:", err);
       this.isRecording = false;
+      return false;
     }
   }
 
@@ -530,9 +686,9 @@ export class AudioEngine {
     
     if (this.recorderNode) {
       try {
-        this.masterLimiter?.disconnect(this.recorderNode);
+        this.masterVolumeNode?.disconnect(this.recorderNode);
         this.recorderNode.disconnect();
-      } catch (e) {}
+      } catch {}
       this.recorderNode = null;
     }
 
@@ -590,8 +746,8 @@ export class AudioEngine {
       const left = chunksL[i];
       const right = chunksR[i];
       for (let j = 0; j < left.length; j++) {
-        let sL = Math.max(-1.0, Math.min(1.0, left[j]));
-        let sR = Math.max(-1.0, Math.min(1.0, right[j]));
+        const sL = Math.max(-1.0, Math.min(1.0, left[j]));
+        const sR = Math.max(-1.0, Math.min(1.0, right[j]));
         
         const sampleL = sL < 0 ? sL * 0x8000 : sL * 0x7fff;
         const sampleR = sR < 0 ? sR * 0x8000 : sR * 0x7fff;
@@ -611,10 +767,8 @@ let instance: AudioEngine | null = null;
 
 export function getAudioEngine(): AudioEngine {
   if (typeof window === "undefined") {
-    // Return mock engine during server SSR compilation
-    return new Proxy({} as any, {
-      get: () => () => {},
-    });
+    // Construction is inert on the server: context creation still requires a browser gesture.
+    return new AudioEngine();
   }
   if (!instance) {
     instance = new AudioEngine();

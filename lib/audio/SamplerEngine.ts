@@ -106,7 +106,7 @@ class SamplerEngine {
 
   private getMasterDestination(): AudioNode | null {
     const engine = getAudioEngine();
-    return (engine as any).masterSummer || engine.ctx?.destination || null;
+    return engine.masterSummer || engine.ctx?.destination || null;
   }
 
   /**

@@ -10,6 +10,10 @@ export interface DbTrack {
   color: string;
   audioData: ArrayBuffer; // stores the binary audio file data
   peaks: number[]; // pre-computed peak levels (0.0 to 1.0)
+  detailPeaks?: number[];
+  waveformVersion?: number;
+  bpmConfidence?: number;
+  analysisVersion?: number;
   gainCorrection?: number; // auto-gain normalization factor (default 1.0)
 }
 

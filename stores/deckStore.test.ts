@@ -12,7 +12,7 @@ describe("deckStore unit tests", () => {
     expect(state.A.isPlaying).toBe(false);
     expect(state.A.progress).toBe(0);
     expect(state.B.isPlaying).toBe(false);
-    expect(state.B.key).toBe("6B");
+    expect(state.B.key).toBe("—");
   });
 
   test("should toggle play state", () => {

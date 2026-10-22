@@ -30,20 +30,24 @@ export default function Knob({
   const [isHovered, setIsHovered] = useState(false);
   const startY = useRef(0);
   const startVal = useRef(0);
+  const activePointer = useRef<number | null>(null);
 
   // Map 0..1 to -135deg..135deg rotation
   const angle = -135 + value * 270;
 
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (activePointer.current !== null || e.button !== 0) return;
+    activePointer.current = e.pointerId;
     e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
     setDragging(true);
     startY.current = e.clientY;
     startVal.current = value;
   };
 
-  const handleMouseMove = useCallback(
-    (e: MouseEvent) => {
-      if (!dragging) return;
+  const handlePointerMove = useCallback(
+    (e: PointerEvent) => {
+      if (e.pointerId !== activePointer.current) return;
       // Moving mouse UP (smaller clientY) increases value
       const dy = startY.current - e.clientY;
       const sensitivity = e.shiftKey ? 0.002 : 0.006; // Hold Shift for fine tuning
@@ -51,10 +55,12 @@ export default function Knob({
       const newVal = Math.max(min, Math.min(max, startVal.current + dy * sensitivity * range));
       onChange(newVal);
     },
-    [dragging, min, max, onChange]
+    [min, max, onChange]
   );
 
-  const handleMouseUp = useCallback(() => {
+  const handlePointerUp = useCallback((e: PointerEvent) => {
+    if (e.pointerId !== activePointer.current) return;
+    activePointer.current = null;
     setDragging(false);
   }, []);
 
@@ -69,14 +75,16 @@ export default function Knob({
 
   useEffect(() => {
     if (dragging) {
-      window.addEventListener("mousemove", handleMouseMove);
-      window.addEventListener("mouseup", handleMouseUp);
+      window.addEventListener("pointermove", handlePointerMove);
+      window.addEventListener("pointerup", handlePointerUp);
+      window.addEventListener("pointercancel", handlePointerUp);
     }
     return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
     };
-  }, [dragging, handleMouseMove, handleMouseUp]);
+  }, [dragging, handlePointerMove, handlePointerUp]);
 
   const handleDoubleClick = () => {
     onChange(defaultValue);
@@ -133,7 +141,20 @@ export default function Knob({
 
       {/* Knob Dial Wrapper */}
       <div
-        onMouseDown={handleMouseDown}
+        role="slider"
+        tabIndex={0}
+        aria-label={label}
+        aria-valuemin={min}
+        aria-valuemax={max}
+        aria-valuenow={value}
+        aria-orientation="vertical"
+        onKeyDown={(event) => {
+          const direction = ["ArrowUp", "ArrowRight"].includes(event.key) ? 1 : ["ArrowDown", "ArrowLeft"].includes(event.key) ? -1 : 0;
+          if (!direction && event.key !== "Home" && event.key !== "End") return;
+          event.preventDefault();
+          onChange(event.key === "Home" ? min : event.key === "End" ? max : Math.max(min, Math.min(max, value + direction * (max - min) * (event.shiftKey ? 0.001 : 0.01))));
+        }}
+        onPointerDown={handlePointerDown}
         onWheel={handleWheel}
         onDoubleClick={handleDoubleClick}
         onMouseEnter={() => setIsHovered(true)}

@@ -1,21 +1,19 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useSyncExternalStore } from "react";
 import { useVJStore } from "../../stores/vjStore";
 import { useDeckStore } from "../../stores/deckStore";
 import { PictureInPicture2 } from "lucide-react";
 
+const subscribePipSupport = () => () => {};
+const readPipSupport = () => document.pictureInPictureEnabled === true;
+
 export default function VJMiniPlayer() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const { activeVideo, isPlaying } = useVJStore();
-  const [isPipAvailable, setIsPipAvailable] = useState<boolean>(false);
+  const isPipAvailable = useSyncExternalStore(subscribePipSupport, readPipSupport, () => false);
   const [isPipActive, setIsPipActive] = useState<boolean>(false);
 
-  useEffect(() => {
-    if (typeof document !== "undefined" && "pictureInPictureEnabled" in document) {
-      setIsPipAvailable(document.pictureInPictureEnabled);
-    }
-  }, []);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -77,24 +75,33 @@ export default function VJMiniPlayer() {
 
   return (
     <div className="flex items-center gap-2">
-      {/* Real visible video preview thumbnail - required for HTML5 PiP */}
-      <div
-        className="relative w-14 h-8 rounded overflow-hidden border border-[#33334d] bg-black shrink-0 transition-all duration-150"
-        style={{
-          boxShadow: isMusicPlaying && activeVideo ? `0 0 10px ${activeVideo.color || "#00d4ff"}60` : "none",
-          borderColor: isMusicPlaying && activeVideo ? `${activeVideo.color || "#00d4ff"}80` : "#33334d",
-        }}
-      >
+      {/* Real visible video preview thumbnail - only shown when a video is loaded */}
+      {activeVideo ? (
+        <div
+          className="relative w-10 sm:w-14 h-6 sm:h-8 rounded overflow-hidden border border-[#33334d] bg-black shrink-0 transition-all duration-150"
+          style={{
+            boxShadow: isMusicPlaying ? `0 0 10px ${activeVideo.color || "#00d4ff"}60` : "none",
+            borderColor: isMusicPlaying ? `${activeVideo.color || "#00d4ff"}80` : "#33334d",
+          }}
+        >
+          <video
+            ref={videoRef}
+            src={activeVideo.url || undefined}
+            autoPlay
+            loop
+            muted
+            playsInline
+            className="w-full h-full object-cover"
+          />
+        </div>
+      ) : (
         <video
           ref={videoRef}
-          src={activeVideo?.url}
-          autoPlay
-          loop
+          className="hidden"
           muted
           playsInline
-          className="w-full h-full object-cover"
         />
-      </div>
+      )}
 
       {/* Trigger Picture-in-Picture Floating Window */}
       {isPipAvailable && (

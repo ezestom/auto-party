@@ -78,7 +78,7 @@ export default function JogWheel({ deckId, color, size = 340 }: JogWheelProps) {
         velocityRef.current = 0;
         setIsScratchMode(false);
         if (deck.isPlaying) {
-          getAudioEngine().setPlaybackRate(deckId, 1.0);
+          getAudioEngine().setPlaybackRate(deckId, 1 + useDeckStore.getState().decks[deckId].tempoOffset);
         } else {
           getAudioEngine().stop(deckId);
         }

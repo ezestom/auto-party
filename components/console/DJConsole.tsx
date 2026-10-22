@@ -1,38 +1,73 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useSyncExternalStore } from "react";
+import Image from "next/image";
+import PartyPanel from "./PartyPanel";
 import DeckPanel from "./DeckPanel";
 import MixerCenter from "./MixerCenter";
 import LibraryPanel from "../library/LibraryPanel";
 import Laser from "../ui/Laser";
 import VJMiniPlayer from "../vj/VJMiniPlayer";
 import AIAutoDJButton from "../ai/AIAutoDJButton";
-import APIKeyModal from "../ai/APIKeyModal";
+import AIConnectionModal from "../ai/APIKeyModal";
+import { useAIConnectionStore } from "../../stores/aiConnectionStore";
 import DJMCModal from "../ai/DJMCModal";
 import SettingsModal from "../settings/SettingsModal";
 import { useDeckStore } from "../../stores/deckStore";
 import { useMixerStore } from "../../stores/mixerStore";
 import { useVJStore } from "../../stores/vjStore";
-import { useAIDJStore } from "../../stores/aiDJStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { Music, Radio, Cpu, Wifi, Zap, Tv, Settings, Mic } from "lucide-react";
 import { getAudioEngine } from "../../lib/audio/AudioEngine";
 import { vjChannel } from "../../lib/vj/vjChannel";
 
+const subscribeViewport = (onChange: () => void) => {
+  window.addEventListener("resize", onChange);
+  return () => window.removeEventListener("resize", onChange);
+};
+const compactLibrary = () => window.innerHeight < 800 || window.innerWidth < 1280;
+
 export default function DJConsole() {
+  useEffect(() => {
+    // Remove the legacy browser credential; new sessions are managed by HttpOnly cookies.
+    try { localStorage.removeItem("eze_mix_gemini_api_key"); } catch {}
+    void useAIConnectionStore.getState().refresh();
+  }, []);
+  const [partyMode, setPartyMode] = useState(false);
   const deckA = useDeckStore((s) => s.decks.A);
   const deckB = useDeckStore((s) => s.decks.B);
-  const { setProgress } = useDeckStore();
 
   const channelA = useMixerStore((s) => s.channels.A);
   const channelB = useMixerStore((s) => s.channels.B);
   const crossfader = useMixerStore((s) => s.crossfader);
 
-  const [isLibraryOpen, setIsLibraryOpen] = useState(true);
+  const compact = useSyncExternalStore(subscribeViewport, compactLibrary, () => false);
+  const [libraryPreference, setLibraryPreference] = useState<boolean | null>(null);
+  const isLibraryOpen = libraryPreference ?? !compact;
   const [isRecording, setIsRecording] = useState(false);
   const [isMCOpen, setIsMCOpen] = useState(false);
   const [clockTime, setClockTime] = useState("");
   const [isAudioReady, setIsAudioReady] = useState(false);
+  const [selectedMobileDeck, setSelectedMobileDeck] = useState<"A" | "MIXER" | "B">("A");
+  const [isShortScreen, setIsShortScreen] = useState(false);
+  const [isNarrow, setIsNarrow] = useState(false);
+  const [isPortraitMode, setIsPortraitMode] = useState(false);
+
+  // Measure screen height and width for responsive layout
+  useEffect(() => {
+    const checkViewport = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      setIsShortScreen(h < 550);
+      setIsNarrow(w < 768);
+      // Portrait mode is active when width < 768 AND height > width
+      setIsPortraitMode(w < 1280);
+    };
+    checkViewport();
+    window.addEventListener("resize", checkViewport);
+    return () => window.removeEventListener("resize", checkViewport);
+  }, []);
+
 
   // Animated Laser State (Smooth Color Mixing & Fade In/Out)
   const [laserParams, setLaserParams] = useState({
@@ -78,8 +113,8 @@ export default function DJConsole() {
       const playingA = deckA.isPlaying;
       const playingB = deckB.isPlaying;
 
-      // Target Intensity: 1.0 if any deck is playing, 0.0 (Laser OFF) if both paused
-      let targetIntensity = playingA || playingB ? 1.0 : 0.0;
+      // React to the audible signal, including pauses, silent passages and master volume.
+      let targetIntensity = Math.min(1.4, getAudioEngine().getVisualEnergy() * 4);
       if (laserBoostRef.current > 0.01) {
         targetIntensity += laserBoostRef.current * 0.8;
         laserBoostRef.current *= 0.94; // Decay boost
@@ -99,42 +134,28 @@ export default function DJConsole() {
         // Crossfader 0 = 100% Deck A, 1 = 100% Deck B
         weightA = Math.max(0.1, (1 - crossfader) * channelA.volume);
         weightB = Math.max(0.1, crossfader * channelB.volume);
+        const total = weightA + weightB;
+        weightA = weightA / total;
+        weightB = weightB / total;
       }
 
-      const totalWeight = weightA + weightB;
-      let targetR = currColorRef.current[0];
-      let targetG = currColorRef.current[1];
-      let targetB = currColorRef.current[2];
+      // Deck A: Orange [1.0, 0.42, 0.0], Deck B: Cyan [0.0, 0.83, 1.0]
+      const targetR = weightA * 1.0 + weightB * 0.0;
+      const targetG = weightA * 0.42 + weightB * 0.83;
+      const targetBCol = weightA * 0.0 + weightB * 1.0;
 
-      if (totalWeight > 0) {
-        const normA = weightA / totalWeight;
-        const normB = weightB / totalWeight;
+      // Smooth Lerp transitions (factor 0.08)
+      const lerpFactor = 0.08;
+      const curCol = currColorRef.current;
+      curCol[0] += (targetR - curCol[0]) * lerpFactor;
+      curCol[1] += (targetG - curCol[1]) * lerpFactor;
+      curCol[2] += (targetBCol - curCol[2]) * lerpFactor;
 
-        // Deck A: Orange [1.0, 0.42, 0.0]
-        // Deck B: Cyan   [0.0, 0.83, 1.0]
-        targetR = normA * 1.0 + normB * 0.0;
-        targetG = normA * 0.42 + normB * 0.83;
-        targetB = normA * 0.0 + normB * 1.0;
-      } else {
-        // Idle ambient color: warm vibrant orange/gold [1.0, 0.42, 0.0]
-        targetR = 1.0;
-        targetG = 0.42;
-        targetB = 0.0;
-      }
-
-      // Linear interpolation (Lerp) for smooth fade in/out and subtle color morphing
       currIntensityRef.current += (targetIntensity - currIntensityRef.current) * 0.06;
-      currColorRef.current[0] += (targetR - currColorRef.current[0]) * 0.05;
-      currColorRef.current[1] += (targetG - currColorRef.current[1]) * 0.05;
-      currColorRef.current[2] += (targetB - currColorRef.current[2]) * 0.05;
 
       setLaserParams({
-        color: [
-          Math.max(0, Math.min(1, currColorRef.current[0])),
-          Math.max(0, Math.min(1, currColorRef.current[1])),
-          Math.max(0, Math.min(1, currColorRef.current[2])),
-        ],
-        intensity: Math.max(0, Math.min(1.8, currIntensityRef.current)),
+        color: [curCol[0], curCol[1], curCol[2]],
+        intensity: currIntensityRef.current,
       });
 
       animFrameRef.current = requestAnimationFrame(animateLaser);
@@ -146,111 +167,49 @@ export default function DJConsole() {
     };
   }, [deckA.isPlaying, deckB.isPlaying, crossfader, channelA.volume, channelB.volume]);
 
-  // 60FPS High-resolution progress simulation loop
+  // Master clock timer update
   useEffect(() => {
-    let lastTime = performance.now();
-    let frameId: number;
-
-    const tick = (now: number) => {
-      const dt = Math.min((now - lastTime) / 1000, 0.1);
-      lastTime = now;
-
-      const currentDeckA = useDeckStore.getState().decks.A;
-      const currentDeckB = useDeckStore.getState().decks.B;
-      const setProg = useDeckStore.getState().setProgress;
-
-      if (currentDeckA.isPlaying) {
-        const speed = 1 + currentDeckA.tempoOffset;
-        const dur = currentDeckA.track ? currentDeckA.track.duration : 300;
-        const deltaProg = (dt * speed) / dur;
-        const next = currentDeckA.progress + deltaProg;
-        setProg("A", next >= 1 ? 0 : next);
-      }
-      if (currentDeckB.isPlaying) {
-        const speed = 1 + currentDeckB.tempoOffset;
-        const dur = currentDeckB.track ? currentDeckB.track.duration : 300;
-        const deltaProg = (dt * speed) / dur;
-        const next = currentDeckB.progress + deltaProg;
-        setProg("B", next >= 1 ? 0 : next);
-      }
-
-      frameId = requestAnimationFrame(tick);
+    const updateTime = () => {
+      const d = new Date();
+      setClockTime(d.toTimeString().split(" ")[0]);
     };
-
-    frameId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frameId);
-  }, [deckA.isPlaying, deckB.isPlaying]);
-
-  // Live clock
-  useEffect(() => {
-    const tick = () =>
-      setClockTime(
-        new Date().toLocaleTimeString("en-US", {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          hour12: false,
-        })
-      );
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
   }, []);
 
-  // Broadcast live BPM and dominant deck color to VJ window automatically
+  // Render the actual audio position. Playback continues independently of screen frames.
   useEffect(() => {
-    const activeDeck = crossfader <= 0.5 ? "A" : "B";
-    const dominantDeck = activeDeck === "A" ? deckA : deckB;
-    const currentBpm = dominantDeck.track?.bpm || dominantDeck.bpm || 128;
-    const isPlaying = deckA.isPlaying || deckB.isPlaying;
+    const update = () => getAudioEngine().syncPlayheads();
+    const timer = window.setInterval(update, 50);
+    document.addEventListener("visibilitychange", update);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", update);
+    };
+  }, []);
 
-    vjChannel.send({
-      type: "BEAT_PULSE",
-      bpm: currentBpm,
-      color: activeDeck === "A" ? "#ff6b00" : "#00d4ff",
-    });
-
-    if (isPlaying) {
-      vjChannel.send({ type: "PLAY", bpm: currentBpm });
-    } else {
-      vjChannel.send({ type: "PAUSE" });
-    }
-  }, [deckA.isPlaying, deckB.isPlaying, deckA.bpm, deckB.bpm, deckA.track?.bpm, deckB.track?.bpm, crossfader]);
-
+  // Record handler
   const handleRecordToggle = async () => {
-    const nextState = !isRecording;
     const engine = getAudioEngine();
-    
-    if (nextState) {
+    if (!isRecording) {
       await engine.resume();
-      engine.startRecording();
-      setIsRecording(true);
+      setIsRecording(engine.startRecording() === true);
     } else {
-      const wavBlob = engine.stopRecording();
+      const blob = await engine.stopRecording();
       setIsRecording(false);
-      
-      if (wavBlob) {
-        const now = new Date();
-        const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
-        const timeStr = now.toTimeString().slice(0, 8).replace(/:/g, "");
-        const filename = `ezemix-mix-${dateStr}-${timeStr}.wav`;
-        
-        const url = URL.createObjectURL(wavBlob);
+      if (blob) {
+        const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
+        a.download = `EZE_MIX_DJ_SET_${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.wav`;
         a.click();
-        
-        setTimeout(() => {
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        }, 100);
+        URL.revokeObjectURL(url);
       }
     }
   };
 
-  const masterBpm = deckA.isMaster ? deckA.bpm : deckB.bpm;
+  const masterBpm = (deckA.bpm + deckB.bpm) / 2;
   const anyPlaying = deckA.isPlaying || deckB.isPlaying;
 
   const { color: laserColor, intensity: laserIntensity } = laserParams;
@@ -258,41 +217,39 @@ export default function DJConsole() {
   return (
     <>
       <div
-        className="relative w-full select-none font-sans overflow-hidden transition-[grid-template-rows] duration-300 ease-in-out"
-      style={{
-        display: "grid",
-        gridTemplateRows: isLibraryOpen ? "44px minmax(0, 1fr) 230px 28px" : "44px minmax(0, 1fr) 0px 28px",
-        transition: "grid-template-rows 300ms cubic-bezier(0.4, 0, 0.2, 1)",
-        height: "100dvh",
-        maxHeight: "100dvh",
-        background: "linear-gradient(180deg, #050508 0%, #08080d 100%)",
-      }}
-    >
-      {/* Visual Ambient Laser Beam Effect */}
-      <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden">
-        <Laser
-          speed={0.4}
-          offset={isLibraryOpen ? 260 : 32}
-          color={laserColor}
-          thickness={8 * laserIntensity}
-          core={1.5 * laserIntensity}
-          radius={28 * laserIntensity}
-          glow={2.8 * laserIntensity}
-          wave={14 * laserIntensity}
-          width={0.8}
-          flicker={0.2 * laserIntensity}
-          reveal={380 * laserIntensity}
-          heat={1.5 * laserIntensity}
-          shimmer={14 * laserIntensity}
-          sparkle={0.35 * laserIntensity}
-          reactivity={1.3}
-          className="w-full h-full"
-        >
-          <div className="w-full h-full" />
-        </Laser>
-      </div>
+        className="dj-console console-shell relative w-full select-none font-sans overflow-hidden flex flex-col"
+        style={{
+          height: "100dvh",
+          maxHeight: "100dvh",
+          background: "linear-gradient(180deg, #050508 0%, #08080d 100%)",
+        }}
+      >
+        {/* Visual Ambient Laser Beam Effect */}
+        <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden">
+          <Laser
+            speed={0.4}
+            offset={isLibraryOpen ? (isShortScreen ? 120 : (isNarrow ? 160 : 225)) : 32}
+            color={laserColor}
+            thickness={8 * laserIntensity}
+            core={1.5 * laserIntensity}
+            radius={28 * laserIntensity}
+            glow={2.8 * laserIntensity}
+            wave={14 * laserIntensity}
+            width={0.8}
+            flicker={0.2 * laserIntensity}
+            reveal={380 * laserIntensity}
+            heat={1.5 * laserIntensity}
+            shimmer={14 * laserIntensity}
+            sparkle={0.35 * laserIntensity}
+            reactivity={1.3}
+            className="w-full h-full"
+          >
+            <div className="w-full h-full" />
+          </Laser>
+        </div>
+
         {/* ══════════════════════════════
-            ROW 1 — HEADER
+            ROW 1 — HEADER (Responsive & Horizontally Scrollable on Mobile)
         ══════════════════════════════ */}
         <header
           style={{
@@ -300,37 +257,39 @@ export default function DJConsole() {
             background: "rgba(6,6,10,0.97)",
             backdropFilter: "blur(20px)",
           }}
-          className="flex items-center justify-between px-4 z-20"
+          className="console-header shrink-0 h-[40px] sm:h-[44px] flex items-center justify-between px-2 sm:px-4 z-20 overflow-x-auto no-scrollbar gap-2"
         >
           {/* Brand */}
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <div className="relative flex items-center justify-center">
-              <img
+              <Image
                 src="/e_logo_music.png"
-                alt="EZE MIX Logo"
-                className="w-9 h-9 object-contain drop-shadow-[0_0_12px_rgba(255,165,0,0.45)]"
+                width={36}
+                height={36}
+                alt="AutoParty logo"
+                className="w-8 h-8 sm:w-9 sm:h-9 object-contain drop-shadow-[0_0_12px_rgba(255,165,0,0.45)]"
               />
               {anyPlaying && (
                 <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#00ff88] animate-pulse shadow-[0_0_8px_#00ff88]" />
               )}
             </div>
             <div className="leading-none">
-              <div className="font-mono text-[16px] font-black tracking-[3px] text-white flex items-center gap-1.5">
-                EZE MIX <span className="text-[10px] text-[#ff6b00] tracking-widest font-mono">PRO</span>
+              <div className="font-mono text-[14px] sm:text-[16px] font-black tracking-[2px] sm:tracking-[3px] text-white flex items-center gap-1">
+                AutoParty <span className="text-[9px] sm:text-[10px] text-[#ff6b00] tracking-widest font-mono">FREE</span>
               </div>
-              <div className="font-mono text-[7.5px] text-text-muted tracking-widest uppercase mt-0.5">EZE MIX DJ CONSOLE v2.0</div>
+              <div className="font-mono text-[7px] sm:text-[8px] text-text-muted tracking-wide mt-0.5">Your music. Party on.</div>
             </div>
           </div>
 
-          {/* Center status */}
-          <div className="flex items-center gap-7">
+          {/* Center status (Desktop / Wide screen display) */}
+          <div className="console-header-status hidden md:flex items-center gap-4 lg:gap-7 shrink-0">
             <div className="flex items-center gap-2">
               <div className={`w-2 h-2 rounded-full transition-all duration-300 ${isAudioReady ? "bg-[#00ff88] shadow-[0_0_8px_#00ff88]" : "bg-[#555570]"}`} />
               <span className="font-mono text-[9.5px] text-text-muted tracking-wider uppercase font-bold">Audio Engine</span>
             </div>
             <div className="flex items-center gap-2">
               <Cpu size={12} className="text-text-muted" />
-              <span className="font-mono text-[9.5px] text-text-muted tracking-wider font-bold">4.2 ms</span>
+              <span className="font-mono text-[9.5px] text-text-muted tracking-wider font-bold">{getAudioEngine().ctx ? `${Math.round((getAudioEngine().ctx?.baseLatency || 0) * 1000)} ms` : "—"}</span>
             </div>
             <div className="flex items-center gap-2">
               <Wifi size={12} className="text-[#00ff88]" />
@@ -342,23 +301,31 @@ export default function DJConsole() {
             </div>
           </div>
 
-          {/* Right actions */}
-          <div className="flex gap-2.5 items-center shrink-0">
+          {/* Right actions (All buttons preserved) */}
+          <div aria-label="Acciones de la consola" role="toolbar" className="console-actions flex gap-1.5 sm:gap-2.5 items-center shrink-0">
+            {/* Library toggle */}
             <button
               id="library-toggle-btn"
-              onClick={() => setIsLibraryOpen((p) => !p)}
+              aria-label={isLibraryOpen ? "Ocultar biblioteca" : "Mostrar biblioteca"}
+              aria-expanded={isLibraryOpen}
+              onClick={() => setLibraryPreference(!isLibraryOpen)}
               style={{
                 borderColor: isLibraryOpen ? "#ff6b00" : "#28283d",
                 color: isLibraryOpen ? "#ff6b00" : "#9999b0",
                 backgroundColor: isLibraryOpen ? "#ff6b001a" : "transparent",
                 boxShadow: isLibraryOpen ? "0 0 14px rgba(255,107,0,0.35)" : "none",
               }}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 text-[10px] font-mono font-black tracking-wider rounded-lg border cursor-pointer uppercase transition-all"
+              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3.5 py-1 sm:py-1.5 text-[9px] sm:text-[10px] font-mono font-black tracking-wider rounded-lg border cursor-pointer uppercase transition-all shrink-0"
             >
-              <Music size={12} />
-              Library
+              <Music size={11} />
+              <span className="hidden xs:inline">Library</span>
             </button>
-            <AIAutoDJButton />
+
+            {/* AI Auto DJ */}
+            <button aria-pressed={partyMode} onClick={() => setPartyMode(!partyMode)} className="px-3 py-2 border border-[#00ff88] rounded-lg text-[#00ff88] text-xs font-bold shrink-0">{partyMode ? "Consola manual" : "Modo Fiesta"}</button>
+            {!partyMode && <AIAutoDJButton />}
+
+            {/* DJ MC / Live Host */}
             <button
               id="dj-mc-btn"
               onClick={() => setIsMCOpen(true)}
@@ -368,13 +335,17 @@ export default function DJConsole() {
                 backgroundColor: "#ff950018",
                 boxShadow: "0 0 12px rgba(255,149,0,0.25)",
               }}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-mono font-black tracking-wider rounded-lg border cursor-pointer hover:bg-[#ff9500]25 hover:text-white uppercase transition-all"
-              title="Abrir DJ MC / Host en vivo (Locutor con Voicebox y Arenga de Fiesta)"
+              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 text-[9px] sm:text-[10px] font-mono font-black tracking-wider rounded-lg border cursor-pointer hover:bg-[#ff9500]25 hover:text-white uppercase transition-all shrink-0"
+              title="Abrir DJ MC / Host en vivo"
             >
-              <Mic size={12} className="text-[#ff9500]" />
-              DJ MC
+              <Mic size={11} className="text-[#ff9500]" />
+              <span>DJ MC</span>
             </button>
+
+            {/* VJ Mini Player */}
             <VJMiniPlayer />
+
+            {/* VJ Display Window */}
             <button
               id="vj-display-btn"
               onClick={() => {
@@ -395,12 +366,14 @@ export default function DJConsole() {
                 color: "#00d4ff",
                 backgroundColor: "#00d4ff18",
               }}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-mono font-black tracking-wider rounded-lg border cursor-pointer hover:bg-[#00d4ff]25 hover:text-white uppercase transition-all shadow-[0_0_12px_rgba(0,212,255,0.2)]"
+              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 text-[9px] sm:text-[10px] font-mono font-black tracking-wider rounded-lg border cursor-pointer hover:bg-[#00d4ff]25 hover:text-white uppercase transition-all shadow-[0_0_12px_rgba(0,212,255,0.2)] shrink-0"
               title="Open VJ Display Window for Monitor 2 Projector/TV"
             >
-              <Tv size={12} className="text-[#00d4ff]" />
-              VJ Display
+              <Tv size={11} className="text-[#00d4ff]" />
+              <span className="hidden sm:inline">VJ Display</span>
             </button>
+
+            {/* Record */}
             <button
               id="record-btn"
               onClick={handleRecordToggle}
@@ -409,21 +382,14 @@ export default function DJConsole() {
                 color: isRecording ? "#ff3355" : "#9999b0",
                 backgroundColor: isRecording ? "#ff335518" : "transparent",
               }}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 text-[10px] font-mono font-black tracking-wider rounded-lg border cursor-pointer uppercase transition-all"
+              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3.5 py-1 sm:py-1.5 text-[9px] sm:text-[10px] font-mono font-black tracking-wider rounded-lg border cursor-pointer uppercase transition-all shrink-0"
             >
               <span className={`w-2 h-2 rounded-full ${isRecording ? "bg-red-custom animate-pulse shadow-[0_0_8px_#ff3355]" : "bg-[#35354c]"}`} />
-              {isRecording ? "REC" : "Rec"}
+              <span>{isRecording ? "REC" : "Rec"}</span>
             </button>
-            <button
-              style={{
-                borderColor: "#ff6b0070",
-                color: "#ff6b00",
-                backgroundColor: "#ff6b0018",
-              }}
-              className="px-3 py-1.5 text-[10px] font-mono font-black tracking-wider rounded-lg border cursor-pointer hover:text-white uppercase transition-colors"
-            >
-              Quantize
-            </button>
+
+          </div>
+            {/* Settings */}
             <button
               id="settings-btn"
               onClick={() => useSettingsStore.getState().setIsOpen(true)}
@@ -432,85 +398,143 @@ export default function DJConsole() {
                 color: "#8888a0",
                 backgroundColor: "transparent",
               }}
-              className="flex items-center justify-center w-8 h-8 rounded-lg border cursor-pointer hover:border-[#ff6b00] hover:text-white hover:bg-[#ff6b0015] transition-all"
+              className="flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-lg border cursor-pointer hover:border-[#ff6b00] hover:text-white hover:bg-[#ff6b0015] transition-all shrink-0"
               title="Ajustes de Consola (Preferencias, Audio, AI)"
             >
-              <Settings size={13} />
+              <Settings size={12} />
             </button>
-          </div>
         </header>
 
         {/* ══════════════════════════════
-            ROW 2 — CONSOLE CONTENT
+            MOBILE PORTRAIT DECK SWITCHER (Visible exclusively on mobile portrait: width < 768 && height > width)
+        ══════════════════════════════ */}
+        {isPortraitMode && !partyMode && (
+          <div onKeyDown={(event) => {
+            const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+            const current = tabs.indexOf(document.activeElement as HTMLButtonElement);
+            if (current < 0 || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+            event.preventDefault();
+            const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+            tabs[next].click();
+            tabs[next].focus();
+          }} aria-label="Panel de la consola" role="tablist" className="console-tabs flex items-center justify-center gap-1.5 px-2 py-1 bg-[#0a0a10] border-b border-[#1e1e2e] shrink-0 z-20">
+            <button
+              role="tab"
+              aria-selected={selectedMobileDeck === "A"}
+              aria-controls="console-panel-A"
+              onClick={() => setSelectedMobileDeck("A")}
+              className={`flex-1 py-1 text-[10px] font-mono font-black tracking-wider rounded-md border uppercase transition-all cursor-pointer ${
+                selectedMobileDeck === "A"
+                  ? "bg-[#ff6b00] text-black border-[#ff6b00] shadow-[0_0_12px_rgba(255,107,0,0.5)]"
+                  : "bg-[#141420] text-[#ff6b00] border-[#ff6b00]40 hover:bg-[#ff6b00]15"
+              }`}
+            >
+              DECK A
+            </button>
+            <button
+              role="tab"
+              aria-selected={selectedMobileDeck === "MIXER"}
+              aria-controls="console-panel-MIXER"
+              onClick={() => setSelectedMobileDeck("MIXER")}
+              className={`flex-1 py-1 text-[10px] font-mono font-black tracking-wider rounded-md border uppercase transition-all cursor-pointer ${
+                selectedMobileDeck === "MIXER"
+                  ? "bg-white text-black border-white shadow-[0_0_12px_rgba(255,255,255,0.4)]"
+                  : "bg-[#141420] text-[#a0a0c0] border-[#2e2e40] hover:bg-white/10"
+              }`}
+            >
+              MIXER
+            </button>
+            <button
+              role="tab"
+              aria-selected={selectedMobileDeck === "B"}
+              aria-controls="console-panel-B"
+              onClick={() => setSelectedMobileDeck("B")}
+              className={`flex-1 py-1 text-[10px] font-mono font-black tracking-wider rounded-md border uppercase transition-all cursor-pointer ${
+                selectedMobileDeck === "B"
+                  ? "bg-[#00d4ff] text-black border-[#00d4ff] shadow-[0_0_12px_rgba(0,212,255,0.5)]"
+                  : "bg-[#141420] text-[#00d4ff] border-[#00d4ff]40 hover:bg-[#00d4ff]15"
+              }`}
+            >
+              DECK B
+            </button>
+          </div>
+        )}
+
+        {/* ══════════════════════════════
+            ROW 2 — CONSOLE CONTENT (Side-by-Side in Landscape & Desktop, Tabbed in Mobile Portrait)
         ══════════════════════════════ */}
         <main
-          className="overflow-hidden flex items-stretch gap-2 px-2 py-1 min-w-0 min-h-0 relative z-20 flex-1"
+          className="console-main relative z-20 min-w-0 min-h-0 flex-1"
+          data-party={partyMode}
         >
-          {/* Deck A */}
-          <div className="flex-1 min-w-[280px] overflow-hidden min-h-0 h-full">
+          {partyMode && <PartyPanel />}
+          <section id="console-panel-A" aria-label="Deck A" className="console-slot console-deck-slot" data-active={selectedMobileDeck === "A"}>
             <DeckPanel deckId="A" color="#ff6b00" isLibraryOpen={isLibraryOpen} />
-          </div>
-
-          {/* Mixer Center */}
-          <div className="shrink-0 overflow-hidden min-w-[245px] min-h-0 h-full">
+          </section>
+          <section id="console-panel-MIXER" aria-label="Master mixer" className="console-slot console-mixer-slot" data-active={selectedMobileDeck === "MIXER"}>
             <MixerCenter isLibraryOpen={isLibraryOpen} />
-          </div>
-
-          {/* Deck B */}
-          <div className="flex-1 min-w-[280px] overflow-hidden min-h-0 h-full">
+          </section>
+          <section id="console-panel-B" aria-label="Deck B" className="console-slot console-deck-slot" data-active={selectedMobileDeck === "B"}>
             <DeckPanel deckId="B" color="#00d4ff" isLibraryOpen={isLibraryOpen} />
-          </div>
+          </section>
         </main>
 
         {/* ══════════════════════════════
             ROW 3 — EMBEDDED SONG LIBRARY
         ══════════════════════════════ */}
-        <div className="overflow-hidden min-h-0 relative z-20">
-          <LibraryPanel isOpen={isLibraryOpen} onClose={() => setIsLibraryOpen(false)} />
+        <div
+          data-open={isLibraryOpen && !partyMode}
+          className="console-library shrink-0 overflow-hidden transition-[height] duration-300 ease-in-out relative z-20"
+          style={{
+            height: isLibraryOpen && !partyMode ? "clamp(200px, 25dvh, 260px)" : 0,
+          }}
+        >
+          <LibraryPanel isOpen={isLibraryOpen} onClose={() => setLibraryPreference(false)} />
         </div>
 
         {/* ══════════════════════════════
-            ROW 4 — STATUS BAR
+            ROW 4 — STATUS BAR (Scrollable on small devices)
         ══════════════════════════════ */}
         <footer
           style={{
             background: "rgba(4,4,7,0.98)",
             borderTop: "1px solid #1e1e30",
           }}
-          className="flex items-center justify-between px-4 z-20"
+          className="shrink-0 h-[24px] sm:h-[28px] flex items-center justify-between px-2 sm:px-4 z-20 overflow-x-auto no-scrollbar gap-4 text-nowrap"
         >
-          <div className="flex gap-7 items-center">
+          <div className="flex gap-4 sm:gap-7 items-center shrink-0">
             {[
               { label: "Master BPM", value: masterBpm.toFixed(1), color: "#ffffff" },
-              { label: "Key A", value: deckA.track ? deckA.track.key : "7A", color: "#ff6b00" },
-              { label: "Key B", value: deckB.track ? deckB.track.key : "6B", color: "#00d4ff" },
-              { label: "Harmonic", value: "✓ Match", color: "#00ff88" },
-              { label: "Latency", value: "4.2 ms", color: "#9999b0" },
-              { label: "Buffer", value: "512 smp", color: "#9999b0" },
+              { label: "Key A", value: deckA.track?.key || "—", color: "#ff6b00" },
+              { label: "Key B", value: deckB.track?.key || "—", color: "#00d4ff" },
+              { label: "Harmonic", value: "Sin analizar", color: "#9999b0" },
+              { label: "Latency", value: "—", color: "#9999b0" },
+              { label: "Buffer", value: "Auto", color: "#9999b0" },
             ].map(({ label, value, color }) => (
-              <div key={label} className="flex gap-1.5 items-baseline">
-                <span className="font-mono text-[9px] text-text-muted uppercase tracking-wider font-bold">{label}:</span>
-                <span className="font-mono text-[10.5px] font-black" style={{ color }}>{value}</span>
+              <div key={label} className="flex gap-1 items-baseline shrink-0">
+                <span className="font-mono text-[8px] sm:text-[9px] text-text-muted uppercase tracking-wider font-bold">{label}:</span>
+                <span className="font-mono text-[9.5px] sm:text-[10.5px] font-black" style={{ color }}>{value}</span>
               </div>
             ))}
           </div>
-          <div className="flex items-center gap-5">
+          <div className="flex items-center gap-3 sm:gap-5 shrink-0">
             {isRecording && (
               <div className="flex items-center gap-1.5 animate-pulse">
                 <div className="w-2 h-2 rounded-full bg-red-custom shadow-[0_0_8px_#ff3355]" />
-                <span className="font-mono text-[9px] text-red-custom font-black uppercase tracking-wider">Recording</span>
+                <span className="font-mono text-[8px] sm:text-[9px] text-red-custom font-black uppercase tracking-wider">Recording</span>
               </div>
             )}
-            <div className="flex items-center gap-2">
-              <Radio size={11} className={isAudioReady ? "text-[#00ff88]" : "text-[#555570]"} />
-              <span className={`font-mono text-[9px] font-black tracking-widest uppercase transition-colors ${isAudioReady ? "text-[#00ff88]" : "text-[#555570]"}`}>
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <Radio size={10} className={isAudioReady ? "text-[#00ff88]" : "text-[#555570]"} />
+              <span className={`font-mono text-[8px] sm:text-[9px] font-black tracking-widest uppercase transition-colors ${isAudioReady ? "text-[#00ff88]" : "text-[#555570]"}`}>
                 {isAudioReady ? "Audio Engine Ready" : "Audio Engine Suspended"}
               </span>
             </div>
           </div>
         </footer>
       </div>
-      <APIKeyModal />
+
+      <AIConnectionModal />
       <SettingsModal />
       <DJMCModal isOpen={isMCOpen} onClose={() => setIsMCOpen(false)} />
     </>

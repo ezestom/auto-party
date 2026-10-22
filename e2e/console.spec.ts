@@ -1,47 +1,37 @@
 import { test, expect } from "@playwright/test";
 
-test.describe("MIXR DJ Console E2E Verification", () => {
-  test.beforeEach(async ({ page }) => {
-    // Open home page
+for (const size of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1440, height: 900 }, { width: 844, height: 390 }]) {
+  test("console and audio settings at " + size.width + "x" + size.height, async ({ page }) => {
+    await page.setViewportSize(size);
     await page.goto("/");
+    await expect(page.locator("header")).toContainText("AutoParty");
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+    expect(overflow).toBe(false);
+    await page.locator("#settings-btn").click();
+    await page.getByRole("button", { name: "Audio & Mezclador" }).click();
+    await expect(page.getByLabel("Auriculares / CUE")).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Booth", exact: true })).toBeVisible();
+    await expect(page.getByLabel("Auriculares / CUE")).toHaveValue("");
+    await page.getByRole("button", { name: "Lineal", exact: true }).click();
+    await page.screenshot({ path: "test-results/settings-" + size.width + ".png" });
   });
+}
 
-  test("should load Root Layout and display brand headers", async ({ page }) => {
-    // Verify brand title is present
-    await expect(page.locator("text=MIXR")).toBeVisible();
-    await expect(page.locator("text=DJ CONSOLE v1.0")).toBeVisible();
-  });
-
-  test("should initialize/resume Web Audio context on user pointer down", async ({ page }) => {
-    // Before click, audio status should say Suspended (default state)
-    const statusText = page.locator("footer");
-    await expect(statusText).toContainText("Audio Engine Suspended");
-
-    // Click on the layout body to trigger gesture resume callback
-    await page.click("body");
-
-    // Expect the status to shift to Ready
-    await expect(statusText).toContainText("Audio Engine Ready");
-  });
-
-  test("should toggle the library sidebar drawer and display import controls", async ({ page }) => {
-    const libraryDrawer = page.locator("#library-drawer");
-    
-    // Panel starts closed/hidden (has class translate-x-full)
-    await expect(libraryDrawer).toHaveClass(/translate-x-full/);
-
-    // Click on Library Toggle Button in the header
-    await page.click("#library-toggle-btn");
-
-    // Panel should now be open and visible (has class translate-x-0)
-    await expect(libraryDrawer).toHaveClass(/translate-x-0/);
-
-    // Check that import buttons are rendered in the panel
-    await expect(page.locator("text=Import Folder")).toBeVisible();
-    await expect(page.locator("text=Import Files")).toBeVisible();
-
-    // Close panel
-    await page.click("#library-close-btn");
-    await expect(libraryDrawer).toHaveClass(/translate-x-full/);
-  });
+test("two touch pointers move separate controls independently and cancel cleanly", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  const sliders = page.getByRole("slider");
+  await expect(sliders.first()).toBeVisible();
+  // Ignore pointer capture here to dispatch deterministic independent DOM streams.
+  await page.evaluate(() => { Element.prototype.setPointerCapture = () => {}; });
+  const first = sliders.nth(0), second = sliders.nth(1);
+  const initial = await first.getAttribute("aria-valuenow");
+  await first.dispatchEvent("pointerdown", { pointerId: 11, pointerType: "touch", button: 0, clientY: 200 });
+  await second.dispatchEvent("pointerdown", { pointerId: 22, pointerType: "touch", button: 0, clientY: 200 });
+  await second.dispatchEvent("pointermove", { pointerId: 22, pointerType: "touch", clientY: 180 });
+  await expect(first).toHaveAttribute("aria-valuenow", initial!);
+  await first.dispatchEvent("pointercancel", { pointerId: 11 });
+  await first.dispatchEvent("pointermove", { pointerId: 11, clientY: 100 });
+  await expect(first).toHaveAttribute("aria-valuenow", initial!);
+  await second.dispatchEvent("pointerup", { pointerId: 22 });
 });

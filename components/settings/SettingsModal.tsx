@@ -1,7 +1,8 @@
 "use client";
 
+import AudioOutputs from "./AudioOutputs";
 import { useSettingsStore } from "../../stores/settingsStore";
-import { useAIDJStore } from "../../stores/aiDJStore";
+import { connectionLabels, useAIConnectionStore } from "../../stores/aiConnectionStore";
 import { X, Sliders, Volume2, Bot, Keyboard, RotateCcw, Shield, Check } from "lucide-react";
 
 export default function SettingsModal() {
@@ -14,12 +15,10 @@ export default function SettingsModal() {
     setLockPlayingDeck,
     autoPlayOnLoad,
     setAutoPlayOnLoad,
-    quantizeBeats,
-    setQuantizeBeats,
     autoGainEnabled,
     setAutoGainEnabled,
-    targetLufs,
-    setTargetLufs,
+
+
     crossfaderCurve,
     setCrossfaderCurve,
     aiDefaultDuration,
@@ -27,7 +26,7 @@ export default function SettingsModal() {
     resetDefaults,
   } = useSettingsStore();
 
-  const { apiKey, setShowApiKeyModal } = useAIDJStore();
+  const connection = useAIConnectionStore();
 
   if (!isOpen) return null;
 
@@ -45,7 +44,7 @@ export default function SettingsModal() {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="relative w-[540px] max-h-[85vh] rounded-2xl border border-[#26263a] overflow-hidden flex flex-col shadow-[0_24px_80px_rgba(0,0,0,0.85),0_0_50px_rgba(255,107,0,0.12)]"
+        className="relative w-[540px] max-w-[calc(100vw-16px)] max-h-[90dvh] rounded-2xl border border-[#26263a] overflow-hidden flex flex-col shadow-[0_24px_80px_rgba(0,0,0,0.85),0_0_50px_rgba(255,107,0,0.12)]"
         style={{
           background: "linear-gradient(180deg, #10101c 0%, #080812 100%)",
         }}
@@ -67,7 +66,7 @@ export default function SettingsModal() {
                 AJUSTES DE CONSOLA
               </div>
               <div className="font-mono text-[8.5px] text-[#777790] tracking-widest uppercase">
-                EZE MIX PRO · Preferencias de Usuario
+                AutoParty · Preferencias de Usuario
               </div>
             </div>
           </div>
@@ -80,7 +79,7 @@ export default function SettingsModal() {
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex px-6 pt-3 border-b border-[#1f1f30] gap-2 shrink-0 bg-black/20">
+        <div className="flex overflow-x-auto px-3 sm:px-6 pt-3 border-b border-[#1f1f30] gap-2 shrink-0 bg-black/20">
           {tabs.map(({ id, label, icon: Icon }) => {
             const isActive = activeTab === id;
             return (
@@ -92,7 +91,7 @@ export default function SettingsModal() {
                   borderColor: isActive ? "#ff6b00" : "transparent",
                   backgroundColor: isActive ? "#ff6b0012" : "transparent",
                 }}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-t-lg font-mono text-[10.5px] font-bold tracking-wider uppercase border-b-2 transition-all cursor-pointer hover:text-white"
+                className="flex shrink-0 items-center gap-2 px-3.5 py-2 rounded-t-lg font-mono text-[10.5px] font-bold tracking-wider uppercase border-b-2 transition-all cursor-pointer hover:text-white"
               >
                 <Icon size={12} />
                 {label}
@@ -141,31 +140,14 @@ export default function SettingsModal() {
                 />
               </div>
 
-              <div className="flex items-center justify-between p-3.5 rounded-xl border border-[#1e1e30] bg-[#0c0c16]">
-                <div>
-                  <div className="font-mono text-[11.5px] font-bold text-white">
-                    Cuantización de Beat (Quantize)
-                  </div>
-                  <div className="font-mono text-[9px] text-[#777790] mt-0.5">
-                    Alinea los Cues y Loops a la cuadrícula de ritmo.
-                  </div>
-                </div>
-                <select
-                  value={quantizeBeats}
-                  onChange={(e) => setQuantizeBeats(Number(e.target.value))}
-                  className="bg-[#141422] border border-[#2a2a3d] text-white font-mono text-[10.5px] font-bold px-2.5 py-1 rounded-lg focus:outline-none focus:border-[#ff6b00]"
-                >
-                  <option value={1}>1 Beat (Standard)</option>
-                  <option value={0.5}>1/2 Beat</option>
-                  <option value={0.25}>1/4 Beat</option>
-                </select>
-              </div>
+
             </div>
           )}
 
           {/* TAB 2: AUDIO & MEZCLADOR */}
           {activeTab === "audio" && (
             <div className="space-y-4">
+              <AudioOutputs />
               <div className="flex items-center justify-between p-3.5 rounded-xl border border-[#1e1e30] bg-[#0c0c16]">
                 <div className="pr-4">
                   <div className="font-mono text-[11.5px] font-bold text-white">
@@ -220,7 +202,7 @@ export default function SettingsModal() {
                   </div>
                 </div>
                 <span className="font-mono text-[10px] font-black px-2 py-0.5 rounded bg-[#00ff8815] border border-[#00ff8840] text-[#00ff88]">
-                  WAV 44.1 kHz / 16-bit
+                  WAV estéreo / 16-bit
                 </span>
               </div>
             </div>
@@ -232,20 +214,20 @@ export default function SettingsModal() {
               <div className="p-3.5 rounded-xl border border-[#1e1e30] bg-[#0c0c16] flex items-center justify-between">
                 <div>
                   <div className="font-mono text-[11.5px] font-bold text-white">
-                    Google AI Studio API Key (Gemini)
+                    IA de la fiesta
                   </div>
                   <div className="font-mono text-[9px] text-[#777790] mt-0.5">
-                    {apiKey ? "✓ API Key configurada y guardada" : "Sin API Key (usando modo BPM Fallback)"}
+                    {connectionLabels[connection.status]}
                   </div>
                 </div>
                 <button
                   onClick={() => {
                     setIsOpen(false);
-                    setShowApiKeyModal(true);
+                    connection.setShowModal(true);
                   }}
                   className="px-3 py-1.5 rounded-lg border border-[#ff6b0060] bg-[#ff6b0018] text-[#ff6b00] font-mono text-[10px] font-bold hover:bg-[#ff6b0028] transition-colors cursor-pointer"
                 >
-                  {apiKey ? "Editar Key" : "Configurar Key"}
+                  Ver conexión IA
                 </button>
               </div>
 
@@ -296,14 +278,11 @@ export default function SettingsModal() {
             <div className="space-y-2">
               <div className="grid grid-cols-2 gap-2 text-xs font-mono">
                 {[
-                  { key: "Espacio", desc: "Play / Pausa Deck A" },
-                  { key: "Shift + Espacio", desc: "Play / Pausa Deck B" },
-                  { key: "C", desc: "Cue Deck A" },
-                  { key: "V", desc: "Cue Deck B" },
-                  { key: "1 - 4", desc: "Hot Cues 1 a 4" },
-                  { key: "F", desc: "Auto-Crossfade Toggle" },
-                  { key: "L", desc: "Abrir / Cerrar Biblioteca" },
-                  { key: "Tab", desc: "Sincronizar BPM (Sync)" },
+                  { key: "↑ ↓ / ← →", desc: "Ajustar el deslizador enfocado" },
+                  { key: "Inicio / Fin", desc: "Mínimo / máximo del deslizador" },
+                  { key: "Enter / Espacio", desc: "Activar el botón enfocado" },
+                  { key: "Tab", desc: "Recorrer los controles" },
+                  { key: "Shift + clic", desc: "Borrar un Hot Cue guardado" },
                 ].map(({ key, desc }) => (
                   <div
                     key={key}
@@ -333,7 +312,7 @@ export default function SettingsModal() {
             className="flex items-center gap-1.5 font-mono text-[9.5px] font-bold text-[#666680] hover:text-[#ff3355] transition-colors cursor-pointer uppercase"
           >
             <RotateCcw size={11} />
-            Restablecer Valores
+            Restablecer preferencias
           </button>
           <button
             onClick={() => setIsOpen(false)}

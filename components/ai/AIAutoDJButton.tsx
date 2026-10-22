@@ -5,20 +5,14 @@ import { Bot, SkipForward, Loader2, Square } from "lucide-react";
 
 export default function AIAutoDJButton() {
   const {
-    isActive, status, activate, deactivate, skipToNext, setShowApiKeyModal,
-    apiKey, djComment, setlist, currentIndex, errorMessage,
+    isActive, status, activate, deactivate, skipToNext, planSource,
+    djComment, setlist, currentIndex, errorMessage,
     autoFXDrops, toggleAutoFXDrops,
   } = useAIDJStore();
 
   const handleClick = () => {
     if (isActive) {
       deactivate();
-      return;
-    }
-
-    // If no API key stored, show modal first
-    if (!apiKey) {
-      setShowApiKeyModal(true);
       return;
     }
 
@@ -35,7 +29,7 @@ export default function AIAutoDJButton() {
       <button
         id="ai-autodj-btn"
         onClick={handleClick}
-        disabled={isAnalyzing}
+        aria-label={isAnalyzing ? "Cancelar preparación" : undefined}
         className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-mono font-black tracking-wider rounded-lg border cursor-pointer uppercase transition-all disabled:cursor-wait relative overflow-hidden"
         style={{
           borderColor: isActive
@@ -60,7 +54,7 @@ export default function AIAutoDJButton() {
             ? `AI DJ Active — ${djComment || "Mixing..."}`
             : hasError
               ? errorMessage
-              : "Activate AI Auto-DJ (Gemini)"
+              : "Iniciar fiesta automática con tu biblioteca local"
         }
       >
         {/* Animated background pulse when active */}
@@ -82,7 +76,7 @@ export default function AIAutoDJButton() {
         {isAnalyzing
           ? "Analyzing..."
           : isActive
-            ? "AI DJ ON"
+            ? planSource === "gemini" ? "GEMINI ON" : "AUTO LOCAL"
             : "AI DJ"}
       </button>
 

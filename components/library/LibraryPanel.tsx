@@ -5,7 +5,7 @@ import { useLibraryStore } from "../../stores/libraryStore";
 import { useVJStore } from "../../stores/vjStore";
 import LibraryRow from "./LibraryRow";
 import VJLibraryRow from "./VJLibraryRow";
-import { Search, ListFilter, ArrowUpDown, X, FolderOpen, Upload, Loader2, Trash2, Film, Video, Tv } from "lucide-react";
+import { Search, ListFilter, ArrowUpDown, X, FolderOpen, Upload, Loader2, Film, Video, Tv } from "lucide-react";
 
 import VJMiniPlayer from "../vj/VJMiniPlayer";
 
@@ -14,29 +14,33 @@ interface LibraryPanelProps {
   onClose: () => void;
 }
 
+type DirectoryEntry = { kind: "file"; getFile: () => Promise<File> } | DirectoryHandle;
+interface DirectoryHandle { kind: "directory"; values: () => AsyncIterable<DirectoryEntry> }
+const directoryAttributes = { webkitdirectory: "", directory: "" };
+
 export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
   const {
     tracks,
     searchQuery,
     sortField,
     importStatus,
+    reanalyzeBpm,
+    analysisMessage,
     initLibrary,
     setSearchQuery,
     setSort,
-    deleteTrack,
   } = useLibraryStore();
 
-  const { videos, activeVideo, loadVideos, importVideo, isLoading: isVjLoading } = useVJStore();
+  const { videos, activeVideo, loadVideos, importVideo } = useVJStore();
 
-  const [mounted, setMounted] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [activeMobileTab, setActiveMobileTab] = useState<"music" | "vj">("music");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
 
   // Initialize library on mount
   useEffect(() => {
-    setMounted(true);
     initLibrary();
     loadVideos();
   }, [initLibrary, loadVideos]);
@@ -95,12 +99,13 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
   };
 
   const handleDirectoryScan = async () => {
-    if (typeof window !== "undefined" && "showDirectoryPicker" in window) {
+    const pickDirectory = (window as Window & { showDirectoryPicker?: () => Promise<DirectoryHandle> }).showDirectoryPicker;
+    if (pickDirectory) {
       try {
-        const dirHandle = await (window as any).showDirectoryPicker();
+        const dirHandle = await pickDirectory.call(window);
         const files: File[] = [];
 
-        async function scan(handle: any) {
+        async function scan(handle: DirectoryHandle) {
           for await (const entry of handle.values()) {
             if (entry.kind === "file") {
               const file = await entry.getFile();
@@ -167,7 +172,6 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
       }`}
     >
       {/* Hidden inputs */}
-      {mounted && (
         <>
           <input
             type="file"
@@ -188,24 +192,56 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
           <input
             type="file"
             ref={folderInputRef}
-            {...({
-              webkitdirectory: "",
-              directory: "",
-            } as any)}
+            {...directoryAttributes}
             multiple
             onChange={handleFileInputChange}
             className="hidden"
           />
         </>
-      )}
 
-      {/* 50/50 SPLIT GRID CONTAINER */}
-      <div className="grid grid-cols-12 gap-3 flex-1 min-h-0 overflow-hidden">
+      {/* MOBILE TAB TOGGLE (< lg screens) */}
+      <div className="flex lg:hidden items-center justify-between gap-1 pb-1 mb-1 border-b border-[#1e1e2c] shrink-0">
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setActiveMobileTab("music")}
+            className={`flex items-center gap-1 px-2.5 py-0.5 rounded font-mono text-[9px] font-black uppercase transition-all cursor-pointer ${
+              activeMobileTab === "music"
+                ? "bg-[#ff6b00]25 text-[#ff6b00] border border-[#ff6b00] shadow-[0_0_8px_rgba(255,107,0,0.3)]"
+                : "text-[#8888a8] border border-[#222234] hover:text-white bg-[#121218]"
+            }`}
+          >
+            <ListFilter size={11} className={activeMobileTab === "music" ? "text-[#ff6b00]" : "text-[#777790]"} />
+            <span>MUSIC ({tracks.length})</span>
+          </button>
+          <button
+            onClick={() => setActiveMobileTab("vj")}
+            className={`flex items-center gap-1 px-2.5 py-0.5 rounded font-mono text-[9px] font-black uppercase transition-all cursor-pointer ${
+              activeMobileTab === "vj"
+                ? "bg-[#00d4ff]25 text-[#00d4ff] border border-[#00d4ff] shadow-[0_0_8px_rgba(0,212,255,0.3)]"
+                : "text-[#8888a8] border border-[#222234] hover:text-white bg-[#121218]"
+            }`}
+          >
+            <Film size={11} className={activeMobileTab === "vj" ? "text-[#00d4ff]" : "text-[#777790]"} />
+            <span>VJ VIDEO ({videos.length})</span>
+          </button>
+        </div>
+
+        <button
+          onClick={onClose}
+          className="p-1 text-[#777790] hover:text-white transition-colors cursor-pointer rounded hover:bg-white/5"
+          title="Minimize Library"
+        >
+          <X size={14} />
+        </button>
+      </div>
+
+      {/* RESPONSIVE GRID CONTAINER: 1-Column on Mobile, 50/50 Split on Desktop (lg+) */}
+      <div className="library-grid grid grid-cols-12 gap-3 flex-1 min-h-0 overflow-hidden">
         
-        {/* LEFT 50% COLUMN: MUSIC LIBRARY */}
-        <div className="col-span-6 flex flex-col h-full min-h-0 border-r border-[#1e1e2c] pr-3 overflow-hidden">
+        {/* LEFT COLUMN: MUSIC LIBRARY (Full width on mobile when active, 6 cols on lg) */}
+        <div className={`${activeMobileTab === "music" ? "flex" : "hidden"} lg:flex col-span-12 lg:col-span-6 flex-col h-full min-h-0 lg:border-r border-[#1e1e2c] lg:pr-3 overflow-hidden`}>
           {/* Header bar / Toolbar */}
-          <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-[#1e1e2c] mb-1 shrink-0">
+          <div className="library-toolbar flex items-center justify-between gap-2 pb-1.5 border-b border-[#1e1e2c] mb-1 shrink-0">
             <div className="flex items-center gap-2 shrink-0">
               <ListFilter size={13} className="text-[#ff6b00]" />
               <span className="font-mono text-[10px] font-black tracking-widest text-white uppercase">
@@ -216,8 +252,8 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
               </span>
             </div>
 
-            <div className="flex items-center gap-1.5 flex-1 max-w-xs">
-              <div className="relative flex-1 flex items-center">
+            <div className="library-tools flex items-center gap-1.5 flex-1 max-w-xs justify-end">
+              <div className="relative flex-1 min-w-[80px] max-w-[160px] flex items-center">
                 <Search size={11} className="absolute left-2 text-[#777790] pointer-events-none" />
                 <input
                   type="text"
@@ -235,6 +271,13 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                 Folder
               </button>
               <button
+                onClick={reanalyzeBpm}
+                disabled={importStatus.active || !tracks.length}
+                title="Reanalizar BPM de la biblioteca"
+                aria-label="Reanalizar BPM"
+                className="px-2 py-0.5 bg-[#121218] border border-[#222234] rounded font-mono text-[8px] text-[#9999b5] disabled:opacity-40 cursor-pointer shrink-0"
+              >BPM</button>
+              <button
                 onClick={() => fileInputRef.current?.click()}
                 className="flex items-center gap-1 px-2 py-0.5 bg-[#121218] border border-[#222234] rounded font-mono text-[8px] text-[#9999b5] hover:text-white hover:border-[#00d4ff] transition-all cursor-pointer font-extrabold uppercase shrink-0"
               >
@@ -244,6 +287,8 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
             </div>
           </div>
 
+          {analysisMessage && <p role="status" className="text-[10px] text-[#aaaabd] px-2 py-1">{analysisMessage}</p>}
+          <div className="library-table-scroll">
           {/* Table headers */}
           <div className="grid grid-cols-12 gap-2 items-center font-mono text-[7.5px] font-extrabold text-[#777795] tracking-wider pb-1 border-b border-[#1c1c28] uppercase shrink-0 px-3 select-none">
             <div className="col-span-1">#</div>
@@ -258,7 +303,7 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
           </div>
 
           {/* Scrollable audio track list */}
-          <div className="flex-1 overflow-y-auto divide-y divide-[#181824] pr-1 mt-0.5">
+          <div className="library-track-list flex-1 overflow-y-auto divide-y divide-[#181824] pr-1 mt-0.5">
             {tracks.map((track, i) => (
               <LibraryRow key={track.id} track={track} index={i} />
             ))}
@@ -268,12 +313,13 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
               </div>
             )}
           </div>
+          </div>
         </div>
 
-        {/* RIGHT 50% COLUMN: VJ VIDEO LIBRARY */}
-        <div className="col-span-6 flex flex-col h-full min-h-0 pl-1 overflow-hidden">
+        {/* RIGHT COLUMN: VJ VIDEO LIBRARY (Full width on mobile when active, 6 cols on lg) */}
+        <div className={`${activeMobileTab === "vj" ? "flex" : "hidden"} lg:flex col-span-12 lg:col-span-6 flex-col h-full min-h-0 lg:pl-1 overflow-hidden`}>
           {/* VJ Header bar */}
-          <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-[#1e1e2c] mb-1 shrink-0">
+          <div className="library-toolbar flex items-center justify-between gap-2 pb-1.5 border-b border-[#1e1e2c] mb-1 shrink-0">
             <div className="flex items-center gap-2 shrink-0">
               <Film size={13} className="text-[#00d4ff]" />
               <span className="font-mono text-[10px] font-black tracking-widest text-white uppercase">
@@ -295,7 +341,7 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
               <button
                 id="library-close-btn"
                 onClick={onClose}
-                className="p-1 text-[#777790] hover:text-white transition-colors cursor-pointer rounded hover:bg-white/5"
+                className="hidden lg:block p-1 text-[#777790] hover:text-white transition-colors cursor-pointer rounded hover:bg-white/5"
                 title="Minimize Library"
               >
                 <X size={14} />
@@ -322,7 +368,7 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
               <div className="flex items-center gap-1 bg-[#12121e] px-2 py-0.5 rounded border border-[#222234]">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#00ff88] animate-pulse" />
                 <span className="text-[7.5px] font-mono font-black text-[#00ff88] uppercase tracking-wider">
-                  AUTO BEAT SYNC
+                  VIDEO LOOP
                 </span>
               </div>
 

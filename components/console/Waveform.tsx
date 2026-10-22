@@ -2,7 +2,8 @@
 
 import { useRef, useState, useEffect, useMemo } from "react";
 import { useDeckStore } from "../../stores/deckStore";
-import { generateMockWaveformData } from "../../lib/audio/WaveformHelper";
+import { getAudioEngine } from "../../lib/audio/AudioEngine";
+import { peakInRange } from "../../lib/audio/waveformPeaks";
 
 interface WaveformProps {
   deckId: "A" | "B";
@@ -18,14 +19,11 @@ export default function Waveform({ deckId, color, isLibraryOpen = true }: Wavefo
 
   const [cssWidth, setCssWidth] = useState(450);
 
-  // Compute/derive waveform peaks whenever track or BPM metadata changes
-  const waveData = useMemo(() => {
-    if (deck.track) {
-      return generateMockWaveformData(deck.track.id, deck.track.duration, deck.track.bpm);
-    }
-    // Fallback data for standby state
-    return generateMockWaveformData("standby-" + deckId, 300, deck.bpm);
-  }, [deck.track, deckId, deck.bpm]);
+  // The amplitude envelope comes from the imported audio, never a demo track.
+  const waveData = useMemo(() => ({
+    peaks: (deck.track?.peaks || []).map(value => Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0),
+    detailPeaks: deck.track?.detailPeaks?.length ? deck.track.detailPeaks : deck.track?.peaks || [],
+  }), [deck.track]);
 
   // ── Refs for rapidly-changing deck values ──
   // These are updated on every React render but read inside rAF without causing re-mount
@@ -34,10 +32,6 @@ export default function Waveform({ deckId, color, isLibraryOpen = true }: Wavefo
     deckRef.current = deck;
   }, [deck]);
 
-  // Smooth playhead interpolation refs for 60fps butter-smooth scrolling
-  const smoothTimeRef = useRef(deck.currentTime);
-  const lastFrameTimeRef = useRef(0);
-  const prevDeckTimeRef = useRef(deck.currentTime);
 
   // ResizeObserver for responsive width & HiDPI resolution scaling
   useEffect(() => {
@@ -51,35 +45,20 @@ export default function Waveform({ deckId, color, isLibraryOpen = true }: Wavefo
     return () => observer.disconnect();
   }, []);
 
-  // Sync smooth time when seeking or changing track
-  useEffect(() => {
-    if (Math.abs(deck.currentTime - prevDeckTimeRef.current) > 0.3 || !deck.isPlaying) {
-      smoothTimeRef.current = deck.currentTime;
-    }
-    prevDeckTimeRef.current = deck.currentTime;
-  }, [deck.currentTime, deck.isPlaying]);
 
   // Main 60fps High-Performance & High-Definition Canvas rendering loop
   // IMPORTANT: Only depends on stable values. Reads deck state from deckRef.current
   useEffect(() => {
     let animationFrameId: number;
-    lastFrameTimeRef.current = performance.now();
 
     const render = () => {
-      const now = performance.now();
-      const dt = Math.min((now - lastFrameTimeRef.current) / 1000, 0.1);
-      lastFrameTimeRef.current = now;
 
       // Read latest deck state from ref (no stale closure)
       const d = deckRef.current;
       const duration = d.track ? d.track.duration : 300;
 
-      // Continuously extrapolate time at 60fps for liquid smooth scrolling
-      if (d.isPlaying) {
-        const speed = 1 + d.tempoOffset;
-        smoothTimeRef.current = Math.min(duration, smoothTimeRef.current + dt * speed);
-      }
-      const currentTime = smoothTimeRef.current;
+      // Draw against the same clock as the audible source, including native loops.
+      const currentTime = d.track ? getAudioEngine().getPlaybackTime(deckId) : 0;
       const progress = duration > 0 ? currentTime / duration : 0;
 
       const zoomedCanvas = zoomedCanvasRef.current;
@@ -88,8 +67,8 @@ export default function Waveform({ deckId, color, isLibraryOpen = true }: Wavefo
       if (zoomedCanvas && overviewCanvas && waveData) {
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
-        const zoomedH = isLibraryOpen ? 52 : 82;
-        const overviewH = isLibraryOpen ? 18 : 22;
+        const zoomedH = zoomedCanvas.clientHeight || 52;
+        const overviewH = overviewCanvas.clientHeight || 18;
 
         const zTargetW = Math.max(1, Math.round(cssWidth * dpr));
         const zTargetH = Math.max(1, Math.round(zoomedH * dpr));
@@ -146,12 +125,10 @@ export default function Waveform({ deckId, color, isLibraryOpen = true }: Wavefo
           const barWidth = 2.2 * dpr;
           const barGap = 0.6 * dpr;
 
-          for (let t = startTime; t <= endTime; t += 0.035) {
-            const peakIdx = Math.floor((t / duration) * numPeaks);
-            if (peakIdx >= numPeaks) break;
-
-            const peakVal = peaks[peakIdx];
-            const barHeight = Math.max(2 * dpr, peakVal * (zH - 12 * dpr));
+          for (let t = Math.floor(startTime / 0.035) * 0.035; t < endTime; t += 0.035) {
+            const peakVal = peakInRange(waveData.detailPeaks, t / duration, Math.min(t + 0.035, duration) / duration);
+            if (peakVal === 0) continue;
+            const barHeight = peakVal * (zH - 12 * dpr);
 
             const x = centerPlayheadX + (t - currentTime) * pixelsPerSecond;
             const isPast = t < currentTime;
@@ -185,11 +162,11 @@ export default function Waveform({ deckId, color, isLibraryOpen = true }: Wavefo
           zCtx.globalAlpha = 1.0;
 
           // Render Pro Beat Grid & Bar Numbers
-          const beatInterval = 60 / d.bpm;
+          const beatInterval = 60 / Math.max(1, d.baseBpm);
           const startBeatIdx = Math.floor(startTime / beatInterval);
           const endBeatIdx = Math.ceil(endTime / beatInterval);
 
-          for (let i = startBeatIdx; i <= endBeatIdx; i++) {
+          for (let i = startBeatIdx; d.track && i <= endBeatIdx; i++) {
             const beatTime = i * beatInterval;
             const x = centerPlayheadX + (beatTime - currentTime) * pixelsPerSecond;
             const isBar = i % 4 === 0;
@@ -258,6 +235,7 @@ export default function Waveform({ deckId, color, isLibraryOpen = true }: Wavefo
             zCtx.fillText((idx + 1).toString(), x, 9.5 * dpr);
           });
 
+          if (d.track) {
           // Render Fixed Center Playhead Needle
           // Red/White illuminated laser playhead line
           zCtx.strokeStyle = "#ffffff";
@@ -295,6 +273,8 @@ export default function Waveform({ deckId, color, isLibraryOpen = true }: Wavefo
           // ═════════════════════════════════════════════════════════════
           // 2. RENDER OVERVIEW WAVEFORM (22px)
           // ═════════════════════════════════════════════════════════════
+          }
+
           const oW = overviewCanvas.width;
           const oH = overviewCanvas.height;
           oCtx.clearRect(0, 0, oW, oH);
@@ -302,6 +282,13 @@ export default function Waveform({ deckId, color, isLibraryOpen = true }: Wavefo
           // Overview background
           oCtx.fillStyle = "#08080e";
           oCtx.fillRect(0, 0, oW, oH);
+
+          if (!d.track) {
+            zCtx.fillStyle = "#8888a0";
+            zCtx.font = Math.round(11 * dpr) + "px monospace";
+            zCtx.textAlign = "center";
+            zCtx.fillText("Cargá una canción", zW / 2, zH / 2 + 4 * dpr);
+          }
 
           // Render full track overview peaks
           const step = oW / numPeaks;
@@ -343,25 +330,40 @@ export default function Waveform({ deckId, color, isLibraryOpen = true }: Wavefo
     return () => cancelAnimationFrame(animationFrameId);
   }, [waveData, color, deckId, cssWidth, isLibraryOpen]);
 
-  const zoomedH = isLibraryOpen ? 52 : 82;
-  const overviewH = isLibraryOpen ? 18 : 22;
-  const containerH = isLibraryOpen ? 80 : 115;
+  const [isShort, setIsShort] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsShort(window.innerHeight < 600);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
+  const zoomedH = isShort ? (isLibraryOpen ? 32 : 44) : (isLibraryOpen ? 52 : 82);
+  const overviewH = isShort ? (isLibraryOpen ? 12 : 15) : (isLibraryOpen ? 18 : 22);
+  const containerH = isShort ? (isLibraryOpen ? 50 : 66) : (isLibraryOpen ? 80 : 115);
 
   return (
     <div
       ref={containerRef}
-      className="flex flex-col gap-1 w-full bg-black/95 p-1 border-t border-b border-[#252538] relative shadow-inner shrink-0"
+      className="waveform-panel flex flex-col gap-0.5 w-full bg-black/95 p-0.5 border-t border-b border-[#252538] relative shadow-inner shrink-0"
       style={{ height: containerH }}
     >
       {/* Zoomed scrolling main waveform */}
       <canvas
         ref={zoomedCanvasRef}
+        role="img"
+        aria-label={`Onda detallada del deck ${deckId}`}
+        data-peak-count={waveData.detailPeaks.length}
         style={{ width: "100%", height: zoomedH }}
         className="w-full rounded-lg border border-[#202034] shadow-md"
       />
       {/* Overview track waveform */}
       <canvas
         ref={overviewCanvasRef}
+        role="img"
+        aria-label={`Vista general del deck ${deckId}`}
+        data-peak-count={waveData.peaks.length}
         style={{ width: "100%", height: overviewH }}
         className="w-full rounded-md border border-[#202034]/70"
       />

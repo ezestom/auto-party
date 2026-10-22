@@ -1,249 +1,105 @@
 "use client";
-
-import { useState, useEffect } from "react";
-import { djAnnouncer, DJ_PHRASE_CATEGORIES } from "../../lib/ai/djAnnouncer";
-import { voiceboxClient } from "../../lib/ai/voiceboxClient";
-import { Mic, Volume2, Sparkles, X, Send, Radio, Bot, Check } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { DJ_PHRASE_CATEGORIES } from "../../lib/ai/djAnnouncer";
+import { googleVoiceClient, type VoicePhase } from "../../lib/ai/googleVoiceClient";
+import { SPEECH_STYLES, SPEECH_VOICES, type SpeechStyle, type SpeechVoice } from "../../lib/ai/speechContract";
+import { AIError } from "../../lib/ai/contract";
+import { useAIConnectionStore } from "../../stores/aiConnectionStore";
 import { useDeckStore } from "../../stores/deckStore";
+import { Mic, X, Square } from "lucide-react";
 
-interface DJMCModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-}
-
-export default function DJMCModal({ isOpen, onClose }: DJMCModalProps) {
-  const [customText, setCustomText] = useState("");
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [voiceProfile, setVoiceProfile] = useState("eze");
-  const [isVoiceboxOnline, setIsVoiceboxOnline] = useState<boolean | null>(null);
-  const [lastSpoken, setLastSpoken] = useState<string>("");
-
-  const deckA = useDeckStore((s) => s.decks.A);
-  const deckB = useDeckStore((s) => s.decks.B);
-
-  // Check Voicebox local connection on mount
+export default function DJMCModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const [text, setText] = useState("");
+  const [voice, setVoice] = useState<SpeechVoice>("Charon");
+  const [style, setStyle] = useState<SpeechStyle>("assistant");
+  const [phase, setPhase] = useState<VoicePhase | null>(null);
+  const [message, setMessage] = useState("");
+  const dialog = useRef<HTMLDivElement>(null);
+  const authorized = useAIConnectionStore(state => state.authorized);
+  const decks = useDeckStore(state => state.decks);
   useEffect(() => {
     if (!isOpen) return;
-
-    const checkVoicebox = async () => {
-      const candidateUrls = [
-        "http://127.0.0.1:17493",
-        "http://localhost:17493",
-        "http://127.0.0.1:17423",
-      ];
-      for (const base of candidateUrls) {
-        for (const path of ["/v1/models", "/health", "/api/models", "/speak", "/"]) {
-          try {
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 1000);
-            const res = await fetch(`${base}${path}`, {
-              method: "GET",
-              signal: controller.signal,
-              mode: "no-cors", // Allows detecting running local server even without CORS header
-            }).catch(() => null);
-            clearTimeout(timeout);
-            if (res) {
-              setIsVoiceboxOnline(true);
-              return;
-            }
-          } catch {
-            // continue
-          }
-        }
-      }
-      setIsVoiceboxOnline(false);
-    };
-
-    checkVoicebox();
+    const previous = document.activeElement as HTMLElement | null;
+    dialog.current?.focus();
+    return () => { googleVoiceClient.stop(); previous?.focus(); };
   }, [isOpen]);
-
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { googleVoiceClient.stop(); onClose(); }
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [isOpen, onClose]);
   if (!isOpen) return null;
-
-  const handleSpeak = async (text: string) => {
-    if (!text.trim() || isSpeaking) return;
-    setIsSpeaking(true);
-    setLastSpoken(text);
-    djAnnouncer.setVoiceProfile(voiceProfile);
+  const busy = phase !== null;
+  const close = () => { googleVoiceClient.stop(); onClose(); };
+  const say = async (phrase: string) => {
+    if (busy || !phrase.trim()) return;
+    setMessage(""); setPhase("generating");
     try {
-      await djAnnouncer.speak(text);
-    } finally {
-      setIsSpeaking(false);
-    }
+      const completed = await googleVoiceClient.speak({ text: phrase, voice, style }, setPhase);
+      setMessage(completed ? "Anuncio reproducido con Google." : "Anuncio detenido.");
+    } catch (error) {
+      setMessage(error instanceof AIError ? error.code === "INVALID_PROVIDER_RESPONSE" ? "Google devolvió un audio que no se puede reproducir." : error.message : "No se pudo reproducir la voz.");
+    } finally { setPhase(null); }
   };
-
-  const handleCategoryShout = async (catId: string) => {
-    if (isSpeaking) return;
-    setIsSpeaking(true);
-    djAnnouncer.setVoiceProfile(voiceProfile);
-    try {
-      await djAnnouncer.shoutCategory(catId);
-    } finally {
-      setIsSpeaking(false);
-    }
+  const announce = (id: "A" | "B") => {
+    const track = decks[id].track;
+    if (track) void say(`Seguimos con ${track.title}${track.artist && track.artist !== "Unknown Artist" ? `, de ${track.artist}` : ""}. Estás escuchando AutoParty.`.slice(0, 400));
   };
-
-  const handleAnnounceDeck = async (deckId: "A" | "B") => {
-    if (isSpeaking) return;
-    setIsSpeaking(true);
-    djAnnouncer.setVoiceProfile(voiceProfile);
-    try {
-      await djAnnouncer.announceTrack(deckId);
-    } finally {
-      setIsSpeaking(false);
-    }
-  };
-
+  const button = "rounded-xl border border-[#303047] bg-[#171724] px-3 py-3 text-sm text-white hover:border-orange-500 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-cyan-400";
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in select-none">
-      <div
-        className="w-full max-w-lg rounded-2xl border border-[#2e2e44] bg-[#0c0c14] shadow-[0_0_50px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col"
-        style={{ borderTop: "2px solid #ff6b00" }}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#1e1e2e] bg-[#12121e]">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-[#ff6b00]20 border border-[#ff6b00] flex items-center justify-center text-[#ff6b00] shadow-[0_0_10px_rgba(255,107,0,0.4)]">
-              <Mic size={14} className={isSpeaking ? "animate-pulse text-white" : ""} />
-            </div>
-            <div>
-              <div className="font-mono text-[12px] font-black text-white uppercase tracking-wider flex items-center gap-2">
-                DJ MC / HOST EN VIVO
-                {isSpeaking && (
-                  <span className="flex items-center gap-1 text-[8.5px] text-[#00ff88] bg-[#00ff88]15 border border-[#00ff88] px-1.5 py-0.2 rounded-full animate-pulse font-bold">
-                    <Radio size={9} /> HABLANDO
-                  </span>
-                )}
-              </div>
-              <div className="font-mono text-[8px] text-[#8888aa] flex items-center gap-2">
-                <span>Motor de Voz:</span>
-                <span className="text-[#ff9500] font-bold">
-                  {isVoiceboxOnline ? "Voicebox Local (Qwen / eze)" : "Web Speech (Nativo)"}
-                </span>
-                <span className={`w-1.5 h-1.5 rounded-full ${isVoiceboxOnline ? "bg-[#00ff88]" : "bg-yellow-500"}`} />
-              </div>
-            </div>
-          </div>
-
-          <button
-            onClick={onClose}
-            className="w-7 h-7 rounded-lg bg-[#181826] border border-[#28283d] flex items-center justify-center text-[#8888aa] hover:text-white hover:border-[#ff6b00] transition-all cursor-pointer"
-          >
-            <X size={13} />
-          </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={event => { if (event.target === event.currentTarget) close(); }}>
+      <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="dj-mc-title" tabIndex={-1}
+        className="w-full max-w-lg max-h-[90dvh] overflow-y-auto rounded-2xl border border-[#303047] bg-[#0c0c14] p-5 text-white shadow-2xl"
+        onKeyDown={event => {
+          if (event.key === "Escape") { event.stopPropagation(); close(); }
+          if (event.key === "Tab") {
+            const items = dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled)');
+            if (!items?.length) return;
+            const first = items[0], last = items[items.length - 1];
+            if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last.focus(); }
+            else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialog.current)) { event.preventDefault(); first.focus(); }
+          }
+        }}>
+        <header className="flex items-center justify-between gap-3">
+          <h2 id="dj-mc-title" className="flex items-center gap-2 text-lg font-bold"><Mic size={20} className="text-orange-500" /> DJ MC · Voz de Google</h2>
+          <button aria-label="Cerrar locutor" onClick={close} className={button}><X size={18} /></button>
+        </header>
+        <p className="mt-3 text-sm leading-relaxed text-[#aaaac0]">Una voz propia para AutoParty. Elegí cómo suena y probá un saludo. La locución usa Google aunque la fiesta esté en AUTO LOCAL.</p>
+        {!authorized && <div className="mt-4 rounded-xl border border-orange-500/40 p-3">
+          <p className="text-sm">Ingresá el código de acceso de la fiesta para usar la voz.</p>
+          <button className={`${button} mt-2`} onClick={() => { close(); useAIConnectionStore.getState().setShowModal(true); }}>Abrir conexión IA</button>
+        </div>}
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <label className="text-sm text-[#aaaac0]">Voz
+            <select aria-label="Voz de Google" value={voice} disabled={busy} onChange={event => setVoice(event.target.value as SpeechVoice)} className="mt-1 w-full rounded-lg bg-[#1b1b2a] p-3 text-white">
+              {SPEECH_VOICES.map(name => <option key={name}>{name}</option>)}
+            </select>
+          </label>
+          <label className="text-sm text-[#aaaac0]">Estilo
+            <select aria-label="Estilo de locución" value={style} disabled={busy} onChange={event => setStyle(event.target.value as SpeechStyle)} className="mt-1 w-full rounded-lg bg-[#1b1b2a] p-3 text-white">
+              {Object.entries(SPEECH_STYLES).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+            </select>
+          </label>
         </div>
-
-        {/* Body */}
-        <div className="p-5 flex flex-col gap-4 overflow-y-auto max-h-[75vh]">
-          {/* Quick Arenga & Shouts */}
-          <div>
-            <div className="font-mono text-[9px] font-bold text-[#8888aa] uppercase tracking-wider mb-2 flex items-center gap-1.5">
-              <Sparkles size={11} className="text-[#ff6b00]" />
-              Frases Rápidas de Fiesta (1 Clic)
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              {DJ_PHRASE_CATEGORIES.map((cat) => (
-                <button
-                  key={cat.id}
-                  onClick={() => handleCategoryShout(cat.id)}
-                  disabled={isSpeaking}
-                  className="px-3 py-2 rounded-xl border border-[#252538] bg-[#141420] hover:bg-[#ff6b00]18 hover:border-[#ff6b00] text-left transition-all cursor-pointer flex items-center gap-2.5 group disabled:opacity-50"
-                >
-                  <span className="text-base group-hover:scale-110 transition-transform">{cat.icon}</span>
-                  <div>
-                    <div className="font-mono text-[10px] font-black text-white group-hover:text-[#ff6b00] transition-colors uppercase">
-                      {cat.name}
-                    </div>
-                    <div className="font-mono text-[7.5px] text-[#777799] truncate max-w-[140px]">
-                      {cat.phrases[0]}
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Announce Active Tracks */}
-          <div>
-            <div className="font-mono text-[9px] font-bold text-[#8888aa] uppercase tracking-wider mb-2 flex items-center gap-1.5">
-              <Volume2 size={11} className="text-[#00d4ff]" />
-              Presentar Canciones en los Decks
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              {/* Deck A */}
-              <button
-                onClick={() => handleAnnounceDeck("A")}
-                disabled={!deckA.track || isSpeaking}
-                style={{ borderColor: deckA.track ? "#ff6b0070" : "#222234" }}
-                className="p-2.5 rounded-xl border bg-[#141420] hover:bg-[#ff6b00]15 text-left transition-all cursor-pointer disabled:opacity-40"
-              >
-                <div className="font-mono text-[8px] font-black text-[#ff6b00] uppercase mb-0.5">
-                  DECK A · PRESENTAR
-                </div>
-                <div className="font-mono text-[9.5px] font-bold text-white truncate">
-                  {deckA.track ? deckA.track.title : "Sin tema cargado"}
-                </div>
-              </button>
-
-              {/* Deck B */}
-              <button
-                onClick={() => handleAnnounceDeck("B")}
-                disabled={!deckB.track || isSpeaking}
-                style={{ borderColor: deckB.track ? "#00d4ff70" : "#222234" }}
-                className="p-2.5 rounded-xl border bg-[#141420] hover:bg-[#00d4ff]15 text-left transition-all cursor-pointer disabled:opacity-40"
-              >
-                <div className="font-mono text-[8px] font-black text-[#00d4ff] uppercase mb-0.5">
-                  DECK B · PRESENTAR
-                </div>
-                <div className="font-mono text-[9.5px] font-bold text-white truncate">
-                  {deckB.track ? deckB.track.title : "Sin tema cargado"}
-                </div>
-              </button>
-            </div>
-          </div>
-
-          {/* Custom Text to Speech */}
-          <div>
-            <div className="font-mono text-[9px] font-bold text-[#8888aa] uppercase tracking-wider mb-1.5 flex items-center justify-between">
-              <span>Frase Personalizada</span>
-              <span className="text-[7.5px] text-[#666688]">Auto-Ducking activado (baja la música)</span>
-            </div>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={customText}
-                onChange={(e) => setCustomText(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSpeak(customText)}
-                placeholder="Escribe lo que quieras que diga el DJ (ej: Un saludo para los pibes de la mesa 4)..."
-                className="flex-1 px-3 py-2 bg-[#141420] border border-[#28283e] rounded-xl font-mono text-[10px] text-white outline-none focus:border-[#ff6b00] transition-all"
-              />
-              <button
-                onClick={() => handleSpeak(customText)}
-                disabled={!customText.trim() || isSpeaking}
-                className="px-4 py-2 rounded-xl bg-[#ff6b00] text-black font-mono text-[10px] font-black tracking-wider uppercase flex items-center gap-1.5 hover:bg-[#ff8533] transition-all cursor-pointer disabled:opacity-40 shadow-[0_0_15px_rgba(255,107,0,0.4)]"
-              >
-                <Send size={11} />
-                DECIR
-              </button>
-            </div>
-          </div>
-
-          {/* Voice Profile Config */}
-          <div className="pt-2 border-t border-[#1e1e2e] flex items-center justify-between font-mono text-[8.5px] text-[#8888aa]">
-            <div className="flex items-center gap-2">
-              <span>Perfil Voicebox:</span>
-              <input
-                type="text"
-                value={voiceProfile}
-                onChange={(e) => setVoiceProfile(e.target.value)}
-                placeholder="eze"
-                className="w-20 px-2 py-0.5 bg-[#141420] border border-[#28283e] rounded text-white text-center font-bold text-[8.5px] outline-none focus:border-[#ff6b00]"
-              />
-            </div>
-            <div className="text-[7.5px] text-[#666688]">
-              Puerto: 127.0.0.1:17493
-            </div>
-          </div>
+        <button className={`${button} mt-3 w-full border-cyan-500/50`} disabled={busy || !authorized} onClick={() => void say("Buenas noches. Soy la voz de AutoParty. La música está lista. Disfrutemos la noche.")}>Probar voz de Google</button>
+        <h3 className="mt-5 mb-2 text-sm font-bold">Frases de la fiesta</h3>
+        <div className="grid grid-cols-2 gap-2">
+          {DJ_PHRASE_CATEGORIES.map(category => <button key={category.id} className={button} disabled={busy || !authorized} onClick={() => void say(category.phrases[Math.floor(Math.random() * category.phrases.length)])}>{category.icon} {category.name}</button>)}
         </div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {(["A", "B"] as const).map(id => <button key={id} className={`${button} min-w-0 truncate`} disabled={busy || !authorized || !decks[id].track} onClick={() => announce(id)}>Presentar deck {id}</button>)}
+        </div>
+        <label htmlFor="dj-mc-text" className="mt-5 block text-sm font-bold">Anuncio personalizado</label>
+        <textarea id="dj-mc-text" value={text} maxLength={400} disabled={busy} onChange={event => setText(event.target.value)} placeholder="Un saludo para los que siguen bailando…" rows={3} className="mt-2 w-full resize-y rounded-xl border border-[#303047] bg-[#171724] p-3 text-sm focus:outline-cyan-400" />
+        <div className="mt-2 flex items-center justify-between gap-3">
+          <span className="text-xs text-[#aaaac0]">{text.length}/400</span>
+          {busy ? <button className={`${button} border-red-500`} onClick={() => googleVoiceClient.stop()}><Square size={12} className="mr-2 inline" />Detener anuncio</button> : <button className={`${button} border-orange-500`} disabled={!text.trim() || !authorized} onClick={() => void say(text)}>Decir anuncio</button>}
+        </div>
+        <p role="status" aria-live="polite" className="mt-3 min-h-5 text-sm text-cyan-300">{phase === "generating" ? "Generando voz con Google…" : phase === "playing" ? "Reproduciendo voz de Google…" : message}</p>
+        <p className="mt-3 text-xs leading-relaxed text-[#9292aa]">Voz generada por IA. El texto se envía a Google. La música baja solo durante la voz. Las frases recientes se reutilizan en esta pestaña. La generación consume cuota; el nivel gratuito tiene límites. Si falla, se muestra el error sin cambiar a una voz robótica.</p>
       </div>
     </div>
   );

@@ -87,7 +87,7 @@ const defaultState = {
 export const useMixerStore = create<MixerStore>((set, get) => ({
   ...defaultState,
 
-  setCrossfader: (val) => set({ crossfader: Math.max(0, Math.min(1, val)) }),
+  setCrossfader: (val) => set({ isAutoCrossfading: false, autoTarget: null, crossfader: Math.max(0, Math.min(1, val)) }),
   setMasterVolume: (val) => set({ masterVolume: Math.max(0, Math.min(1, val)) }),
   setHeadphoneVolume: (val) => set({ headphoneVolume: Math.max(0, Math.min(1, val)) }),
   setHeadphoneMix: (val) => set({ headphoneMix: Math.max(0, Math.min(1, val)) }),
@@ -117,6 +117,7 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
 
   setEQHi: (deckId, val) =>
     set((state) => ({
+      isAutoCrossfading: false, autoTarget: null,
       channels: {
         ...state.channels,
         [deckId]: {
@@ -128,6 +129,7 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
 
   setEQMid: (deckId, val) =>
     set((state) => ({
+      isAutoCrossfading: false, autoTarget: null,
       channels: {
         ...state.channels,
         [deckId]: {
@@ -139,6 +141,7 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
 
   setEQLo: (deckId, val) =>
     set((state) => ({
+      isAutoCrossfading: false, autoTarget: null,
       channels: {
         ...state.channels,
         [deckId]: {
@@ -150,6 +153,7 @@ export const useMixerStore = create<MixerStore>((set, get) => ({
 
   setFilter: (deckId, val) =>
     set((state) => ({
+      isAutoCrossfading: false, autoTarget: null,
       channels: {
         ...state.channels,
         [deckId]: {
