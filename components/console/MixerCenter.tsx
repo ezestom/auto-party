@@ -269,7 +269,7 @@ export default function MixerCenter({ isLibraryOpen = true }: MixerCenterProps) 
 
       {/* BPM Sync section */}
       <div
-        className={`mt-auto px-3 shrink-0 ${isLibraryOpen ? "pb-2 pt-1.5" : "pb-3 pt-2"}`}
+        className={`mixer-bpm mt-auto px-3 shrink-0 ${isLibraryOpen ? "pb-2 pt-1.5" : "pb-3 pt-2"}`}
         style={{ borderTop: "1px solid #222234", background: "rgba(0,0,0,0.35)" }}
       >
         <div className="flex justify-between items-end mb-1">
@@ -295,7 +295,7 @@ export default function MixerCenter({ isLibraryOpen = true }: MixerCenterProps) 
           <div className="absolute left-1/2 top-0 bottom-0 w-px bg-white/40" />
         </div>
         <span className="font-mono text-[8px] text-center block text-white mt-1 tracking-wider font-black">
-          {Math.abs(deckA.bpm - deckB.bpm) < 0.1 ? "BPM SIMILARES" : `ΔBPM ${Math.abs(deckA.bpm - deckB.bpm).toFixed(1)}`}
+          {Math.abs(deckA.bpm - deckB.bpm) < 0.1 ? "SIMILAR BPM" : `ΔBPM ${Math.abs(deckA.bpm - deckB.bpm).toFixed(1)}`}
         </span>
       </div>
     </div>

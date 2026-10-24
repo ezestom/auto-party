@@ -4,15 +4,16 @@ for (const size of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, {
   test("console and audio settings at " + size.width + "x" + size.height, async ({ page }) => {
     await page.setViewportSize(size);
     await page.goto("/");
-    await expect(page.locator("header")).toContainText("AutoParty");
+    await expect(page.locator(".console-header")).toContainText("AutoParty");
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
     expect(overflow).toBe(false);
     await page.locator("#settings-btn").click();
-    await page.getByRole("button", { name: "Audio & Mezclador" }).click();
-    await expect(page.getByLabel("Auriculares / CUE")).toBeVisible();
-    await expect(page.getByRole("combobox", { name: "Booth", exact: true })).toBeVisible();
-    await expect(page.getByLabel("Auriculares / CUE")).toHaveValue("");
-    await page.getByRole("button", { name: "Lineal", exact: true }).click();
+    await page.getByRole("tab", { name: "Audio", exact: true }).click();
+    await page.locator(".settings-advanced summary").click();
+    await expect(page.getByLabel("Headphones / CUE")).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Extra speakers / Booth", exact: true })).toBeVisible();
+    await expect(page.getByLabel("Headphones / CUE")).toHaveValue("");
+
     await page.screenshot({ path: "test-results/settings-" + size.width + ".png" });
   });
 }

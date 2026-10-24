@@ -9,7 +9,7 @@ test.beforeEach(async ({page})=>{
    const createAnalyser=AudioContext.prototype.createAnalyser;
    AudioContext.prototype.createAnalyser=function(){const node=createAnalyser.call(this);audit.auditAnalysers.push(node);return node;};
  });
- await page.goto('/');await expect(page.locator('#library-bottom-panel')).toBeVisible();
+ await page.goto('/');await page.locator('#library-toggle-btn').click();await expect(page.locator('#library-bottom-panel')).toBeVisible();
  await page.waitForFunction(async()=>(await indexedDB.databases()).some(d=>d.name==='MixrDatabase' && (d.version??0)>=20));
   await page.evaluate(async () => {
     const sampleRate = 8000, samples = sampleRate * 40;
@@ -36,13 +36,24 @@ test.beforeEach(async ({page})=>{
     });
   });
 
- await page.reload();await page.getByTitle('Load to Deck A',{exact:true}).first().click();
+ await page.reload();await page.locator('#library-toggle-btn').click();await page.getByTitle('Load to Deck A',{exact:true}).first().click();
  await expect(page.locator('main').getByText('safety-one',{exact:true}).first()).toBeVisible();
+ await page.getByRole('button',{name:'Close library',exact:true}).click();
 });
 test('only working pad modes and audio controls are exposed',async({page})=>{
  for(const id of ['#keylock-btn-A','#keylock-btn-B'])await expect(page.locator(id)).toHaveCount(0);
  for(const name of ['Quantize','REVERB','ROLL','SLICER','BEAT JMP'])await expect(page.getByRole('button',{name,exact:true})).toHaveCount(0);
  await expect(page.locator('.deck-panel').first().getByRole('button',{name:'LOOP',exact:true})).toBeVisible();
+});
+
+test('audio engine is green only while the console is playing', async ({page}) => {
+ const indicator = page.locator('#audio-engine-indicator');
+ await expect(indicator).toHaveAttribute('data-state', 'ready');
+ await page.locator('#play-btn-A').click();
+ await expect(indicator).toHaveAttribute('data-state', 'playing');
+ await expect(indicator.locator('span')).toHaveCSS('color', 'rgb(0, 255, 136)');
+ await page.locator('#play-btn-A').click();
+ await expect(indicator).toHaveAttribute('data-state', 'ready');
 });
 test('saving cue preserves current location and CUE returns there with keyboard',async({page})=>{
  await page.locator('#play-btn-A').click();await page.waitForTimeout(1300);
@@ -75,13 +86,15 @@ test('new projector shows the selected video and clears it on delete',async({pag
  const sourceWarnings:string[]=[];
  page.on('console',message=>{if(message.text().includes('empty string'))sourceWarnings.push(message.text());});
  await page.evaluate(()=>new Promise<void>((resolve,reject)=>{const r=indexedDB.open('MixrDatabase');r.onsuccess=()=>{const db=r.result;const tx=db.transaction('videos','readwrite');for(const [id,title]of [['audit-a','AUDIT A'],['audit-z','AUDIT Z']])tx.objectStore('videos').put({id,title,category:'CUSTOM VJ',duration:1,url:'',color:'#00d4ff'});tx.oncomplete=()=>{db.close();resolve()};tx.onerror=()=>reject(tx.error)};r.onerror=()=>reject(r.error)}));
- await page.reload();await page.getByText('AUDIT A',{exact:true}).last().click();
+ await page.reload();await page.locator('#library-toggle-btn').click();await page.getByText('AUDIT A',{exact:true}).last().click();
  await expect(page.locator('video[src=""]')).toHaveCount(0);
- const opened=page.waitForEvent('popup');await page.getByTitle('Open VJ Display Window for Monitor 2 Projector/TV',{exact:true}).click();const projector=await opened;
+ await page.getByRole('button',{name:'Close library',exact:true}).click();
+ const opened=page.waitForEvent('popup');await page.getByRole('button',{name:'Open visuals',exact:true}).click();const projector=await opened;
  await expect(projector.getByText('AUDIT A',{exact:true})).toBeVisible();
- const a=page.getByTitle('Delete VJ Video',{exact:true}).first();await a.click({force:true});
+ await page.locator('#library-toggle-btn').click();
+ const a=page.getByTitle('Delete VJ Video',{exact:true}).first();await a.hover();await a.click();
  await expect(projector.getByText('AUDIT Z',{exact:true})).toBeVisible();
- await page.getByTitle('Delete VJ Video',{exact:true}).first().click({force:true});
+ await page.getByTitle('Delete VJ Video',{exact:true}).first().hover();await page.getByTitle('Delete VJ Video',{exact:true}).first().click();
  await expect(projector.getByText('STANDBY — NO VIDEO LOADED',{exact:true})).toBeVisible();await projector.close();
  expect(sourceWarnings).toEqual([]);
 });
@@ -107,17 +120,17 @@ test('visual analyser follows actual output and becomes silent when master is mu
  await page.locator('#play-btn-A').click();await expect.poll(energy).toBeLessThan(0.00001);
 });
 test('party view starts locally, pauses safely and fits a phone',async({page})=>{
- await page.route('https://generativelanguage.googleapis.com/**',r=>r.abort());
- await page.getByRole('button',{name:'Modo Fiesta',exact:true}).click();
- await expect(page.getByRole('region',{name:'Modo Fiesta',exact:true})).toBeVisible();
- await page.getByRole('button',{name:'Iniciar fiesta',exact:true}).click();
- await expect(page.getByRole('button',{name:'Pausar fiesta',exact:true})).toBeVisible();
- await expect(page.getByRole('status')).toContainText('Automático activo');
- await page.getByRole('button',{name:'Pausar fiesta',exact:true}).click();
- await expect(page.getByRole('button',{name:'Iniciar fiesta',exact:true})).toBeVisible();
+ await page.route('https://api.groq.com/**',r=>r.abort());
+ await page.getByRole('button',{name:'Party mode',exact:true}).click();
+ await expect(page.getByRole('region',{name:'Party mode',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Start party',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Pause party',exact:true})).toBeVisible();
+ await expect(page.getByRole('status')).toContainText('Auto-DJ is running');
+ await page.getByRole('button',{name:'Pause party',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Start party',exact:true})).toBeVisible();
  await page.setViewportSize({width:390,height:844});
  expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth)).toBe(true);
  await page.screenshot({path:'test-results/party-phone.png',fullPage:true});
- await page.getByRole('button',{name:'Consola manual',exact:true}).click();
+ await page.getByRole('button',{name:'Manual console',exact:true}).click();
  await expect(page.locator('#play-btn-A')).toBeVisible();
 });

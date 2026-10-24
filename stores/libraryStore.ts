@@ -1,3 +1,4 @@
+import { detectMixBoundaries } from "../lib/audio/mixBoundaries";
 import { create } from "zustand";
 import { TrackMetadata } from "./deckStore";
 import { db, DbTrack } from "../lib/db/dexie";
@@ -16,6 +17,7 @@ export interface ImportStatus {
 
 interface LibraryStore {
   tracks: TrackMetadata[];
+  allTracks: TrackMetadata[];
   searchQuery: string;
   sortField: SortField;
   sortDirection: SortDirection;
@@ -41,15 +43,16 @@ interface LibraryStore {
 function analyzeTempo(audioData: Float32Array, sampleRate: number): Promise<{bpm: number; confidence: number}> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL("../lib/workers/bpm.worker.ts", import.meta.url));
-    const timer = setTimeout(() => { worker.terminate(); reject(new Error("El análisis de BPM tardó demasiado.")); }, 15000);
+    const timer = setTimeout(() => { worker.terminate(); reject(new Error("BPM analysis timed out.")); }, 15000);
     worker.onmessage = event => { clearTimeout(timer); worker.terminate(); if (event.data.error) reject(new Error(event.data.error)); else resolve(event.data); };
-    worker.onerror = () => { clearTimeout(timer); worker.terminate(); reject(new Error("No se pudo analizar el ritmo.")); };
+    worker.onerror = () => { clearTimeout(timer); worker.terminate(); reject(new Error("Could not analyze the beat.")); };
     worker.postMessage({audioData, sampleRate});
   });
 }
 
 export const useLibraryStore = create<LibraryStore>((set, get) => ({
   tracks: [],
+  allTracks: [],
   searchQuery: "",
   sortField: "title",
   sortDirection: "asc",
@@ -81,8 +84,8 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
         } catch { failed++; }
       }
       await get().loadTracksFromDb();
-      set({analysisMessage: detected + " BPM estimados; " + (rows.length-detected-failed) + " sin ritmo claro; " + failed + " errores. Los decks ya cargados conservan sus valores hasta recargarlos."});
-    } catch (error) { set({analysisMessage:error instanceof Error ? error.message : "No se pudo analizar la biblioteca."}); }
+      set({analysisMessage: detected + " BPM estimates; " + (rows.length-detected-failed) + " without a clear beat; " + failed + " errors. Loaded decks keep their values until reloaded."});
+    } catch (error) { set({analysisMessage:error instanceof Error ? error.message : "Could not analyze the library."}); }
     finally { set({importStatus:{active:false,current:0,total:0,filename:""}}); }
   },
   initLibrary: async () => {
@@ -93,6 +96,7 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
   loadTracksFromDb: async () => {
     const { searchQuery, sortField, sortDirection } = get();
     let dbTracks = await db.tracks.toArray();
+    const allRows = dbTracks.slice();
 
     // Search filter
     if (searchQuery) {
@@ -120,17 +124,17 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
     });
 
     // Map DbTrack to TrackMetadata for store UI state
-    const tracksMetadata: TrackMetadata[] = dbTracks.map((t) => ({
+    const metadata = (t: DbTrack): TrackMetadata => ({
       id: t.id,
       title: t.title,
       artist: t.artist,
       bpm: t.bpm,
       key: t.key,
       duration: t.duration,
-      color: t.color,
-    }));
+      color: t.color, audioStart: t.audioStart, audioEnd: t.audioEnd,
+    });
 
-    set({ tracks: tracksMetadata });
+    set({ tracks: dbTracks.map(metadata), allTracks: allRows.map(metadata) });
   },
 
   setSearchQuery: async (searchQuery) => {
@@ -223,6 +227,7 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
         detailPeaks,
         waveformVersion: 1,
         gainCorrection: clampedGain,
+        ...detectMixBoundaries(decodedBuffer),
       };
 
       await db.tracks.put(dbTrack);

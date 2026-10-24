@@ -29,7 +29,7 @@ interface VJState {
   setActiveVideo: (video: VJVideoItem) => void;
   setPlaying: (playing: boolean) => void;
   setEffect: (effect: "NORMAL" | "STROBE" | "GLITCH" | "NEON_WAVE") => void;
-  syncTime: (time: number) => void;
+  syncTime: (time: number, playing?: boolean) => void;
   setWindowOpen: (open: boolean) => void;
   rotateToNextVideo: () => void;
   triggerDropFlash: (dropText?: string, color?: string) => void;
@@ -172,10 +172,16 @@ export const useVJStore = create<VJState>((set, get) => ({
     });
   },
 
-  syncTime: (time: number) => {
+  syncTime: (time: number, playing = get().isPlaying) => {
     vjChannel.send({
       type: "SYNC_TIME",
       time,
+      sentAt: Date.now(),
+      videoId: get().activeVideo?.id,
+      videoUrl: get().activeVideo?.url,
+      videoTitle: get().activeVideo?.title,
+      color: get().activeVideo?.color,
+      playing,
     });
   },
 

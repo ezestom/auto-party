@@ -11,9 +11,9 @@ Actualizada el 22 de octubre de 2026. Describe los controles disponibles en esta
 5. **Pausar fiesta** detiene ambos decks y desactiva el automático. Al iniciar de nuevo se prepara otra sesión desde la canción cargada.
 6. **Consola manual** permite intervenir. Cambiar de vista conserva los decks y la reproducción.
 
-El automático local ordena canciones por BPM estimado. Para planificar con Gemini, el administrador configura la clave en el servidor y el invitado abre **Ver conexión IA**, ingresa el código de acceso y pulsa **Conectar y probar**. La web nunca pide la clave de Google. También se puede elegir **Usar automático local**.
+El automático local ordena canciones por BPM estimado. Para planificar con Groq, el administrador configura la clave en el servidor y el invitado abre **View AI connection**, ingresa el código de acceso y pulsa **Connect and test**. La web nunca pide la clave de Groq. También se puede elegir **Use local Auto-DJ**.
 
-**Gemini conectado · plan recibido** identifica una planificación remota exitosa; **Automático local · orden por BPM** identifica el modo local y muestra el motivo cuando falló la consulta. Configurado no significa conectado: se comprueba la respuesta del proveedor. La música se procesa en el navegador; Google recibe metadatos para ordenar el set, no archivos de audio. Ver [CONFIGURACION-IA.md](CONFIGURACION-IA.md) para claves, límites y publicación.
+**Groq connected · plan received** identifica una planificación remota exitosa; **Local Auto-DJ · sorted by BPM** identifica el modo local y muestra el motivo cuando falló la consulta. Configurado no significa conectado: se comprueba la respuesta del proveedor. La música se procesa en el navegador; Groq recibe metadatos para ordenar el set, no archivos de audio. Ver [CONFIGURACION-IA.md](CONFIGURACION-IA.md) para claves, límites y publicación.
 
 El motor ejecuta fundidos y cortes. No detecta frases musicales ni sincroniza la fase de los beats. La lista es finita: al llegar al final, la sesión termina. Cancelar el análisis mantiene la canción que ya estaba sonando.
 
@@ -54,16 +54,34 @@ En escritorio, platos y faders se ajustan al ancho y alto disponibles sin scroll
 
 KEY LOCK, Quantize, Beat FX, ROLL, SLICER y BEAT JUMP no se ofrecen como funciones terminadas. Los cambios de tempo alteran la tonalidad.
 
-## Visuales y locutor
+## Visuales
 
 - El láser de la consola responde a la energía de la salida real; se apaga gradualmente con silencio o master a cero. Las ráfagas de transición son efectos adicionales.
 - Importá videos en la biblioteca VJ y elegí el activo. **Abrir TV / proyector** abre la pantalla audiovisual; **FLOAT PIP** depende del soporte del navegador y de un video cargado.
 - El proyector toma la selección actual y se actualiza al eliminar videos. Los láseres del proyector todavía son animaciones decorativas.
-- **DJ MC** usa Google TTS para frases y texto de hasta 400 caracteres. Requiere el código de acceso de IA; funciona también con la fiesta en AUTO LOCAL. Elegí Charon, Fenrir o Kore y estilo asistente, radio o fiesta. **Probar voz de Google** reproduce un saludo.
-- El panel distingue generación y reproducción; **Detener anuncio** cancela la solicitud o detiene la voz. Cerrar el panel también la detiene. Un fallo se muestra sin sustituir la voz por Web Speech. Se reutilizan las últimas ocho frases en memoria de la pestaña (máximo 8 MB); una recarga borra esa caché.
-- La música se atenúa solo al comenzar la voz, recupera su nivel al terminar y conserva los cambios manuales del master. Un anuncio en curso bloquea otro anuncio simultáneo.
-- La voz de Google pasa por el master y forma parte de la grabación WAV del motor. El módulo previo de Voicebox/Web Speech se conserva en código, pero DJ MC no lo usa automáticamente.
 
 ## Límites de la verificación
 
-Se probaron archivos sintéticos y navegadores aislados. Queda pendiente escuchar música real, validar Voicebox instalado, interfaces de audio, proyector físico, Safari/iOS y sesiones largas. La grabación aún usa ScriptProcessor y memoria. No se realizó un despliegue.
+Se probaron archivos sintéticos y navegadores aislados. Queda pendiente escuchar música real, interfaces de audio, proyector físico, Safari/iOS y sesiones largas. La grabación aún usa ScriptProcessor y memoria. No se realizó un despliegue.
+
+## Bloques y cola compartida
+
+En Party mode, Musical block permite crear y guardar bloques con nombre y canciones elegidas manualmente. Una canción puede estar en varios bloques. All music utiliza todo el catálogo; buscar en Library no cambia el catálogo del Auto-DJ. La pertenencia al bloque es explícita: no hay detección automática de género o energía. Cambiar un bloque conserva el tema actual y los pedidos del DJ; Groq reordena las canciones elegibles sin detener la reproducción. Si falla o la respuesta queda obsoleta, se conserva el orden local seguro. Los bloques no cambian solos ni repiten automáticamente los temas ya escuchados.
+
+Con Auto-DJ activo, Play next y Add to queue están en cada canción de Library. Los pedidos se identifican en Up next; Next los pone primero y × los retira. Un pedido puede salir del bloque elegido. La canción actual no se reinicia y no se duplica una canción en la cola pendiente. Durante una transición ya iniciada, la edición espera a que termine.
+
+Intervenir en un deck, buscar una posición o mover el crossfader suspende la automatización. Resume Auto-DJ adopta el tema audible; para evitar saltos de volumen, primero se termina la mezcla manual llevando el crossfader al extremo del tema que se quiere conservar. Detener Auto-DJ no detiene la música.
+
+Las transiciones usan el final audible y preparan el siguiente archivo sin reproducirlo. El análisis detecta únicamente silencios sostenidos en los extremos y verifica todos los canales: no detecta voces, estribillos, frases ni beatgrid. Tempos cercanos usan un fundido de hasta 8 segundos; diferencias grandes o tempos desconocidos usan uno breve. Drops queda apagado por defecto. Los loops guardados no se activan al cargar automáticamente el siguiente tema.
+
+## Acceso inferior a la biblioteca
+
+Media library permanece visible abajo. Se abre con un clic, teclado o arrastre hacia arriba. El botón Library del encabezado sigue disponible. La pestaña ocupa su propio espacio para no cubrir controles ni pads; al cerrar, el foco regresa al acceso que la abrió.
+
+## Efectos de transición
+
+Party mode → Transition effects (o Settings → Auto-DJ) permite elegir Auto, Off, Next · Filter sweep o Next · Echo out. Auto acepta únicamente propuestas validadas de Groq y deja al menos tres transiciones y 45 segundos entre efectos. En modo local, Auto conserva fundidos simples; el DJ puede pedir un preset manual. Off se guarda como preferencia y se restaura con Reset preferences. Los presets Next se consumen una vez y vuelven a la preferencia Auto/Off anterior.
+
+Filter sweep aplica un pasa-altos suave en la salida de la canción y recupera el valor neutro. Echo out usa una salida breve y un delay de medio beat calculado con BPM estimado; requiere un tempo válido de 60–200 BPM y no implica cuantización ni beatgrid. El motor limita send, volumen y feedback, y desvanece la cola. Un dato inválido o un efecto no disponible conserva el fundido simple. Cancel effect permite quitar el efecto sin parar la música.
+
+Intervenir en transporte, crossfader, EQ, filtro, ganancia o volumen cancela los efectos automatizados. Los medidores VU no los cancelan. La IA solo propone identificadores de acciones permitidas: la app valida y el motor ejecuta con AudioContext. Playwright no participa de la fiesta; se utiliza para verificar la interfaz y el audio en pruebas.

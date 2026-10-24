@@ -1,11 +1,9 @@
 import "server-only";
-import { AIError, parseTracks } from "../../ai/contract";
+import { AIError, parseTracks, parseBlockName } from "../../ai/contract";
 import { checkAccessCode, checkOrigin, createSession, readConfig, readSession, sessionCookie } from "./access";
 import { MemoryQuota, RedisQuota, type Quota } from "./limits";
 import { boundedJson, errorResponse, jsonResponse } from "./http";
-import { planWithGemini, testGemini } from "./provider";
-import { parseSpeech } from "../../ai/speechContract";
-import { generateSpeech } from "./speech";
+import { planWithGroq, testGroq } from "./provider";
 
 const memory = new MemoryQuota();
 interface Dependencies { env?: () => Record<string, string | undefined>; quota?: Quota; fetcher?: typeof fetch; now?: () => number }
@@ -37,16 +35,6 @@ export function createAIHandlers(deps: Dependencies = {}) {
     if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json") throw new AIError("INVALID_REQUEST", 415);
   }
   return {
-    async speech(request: Request) {
-      try {
-        const access = await authorize(request); requireJson(request);
-        const input = parseSpeech(await boundedJson(request, 4096));
-        await spend(request, access);
-        const model = (deps.env?.() || process.env).GEMINI_TTS_MODEL?.trim() || "gemini-3.8-flash-tts";
-        const audio = await generateSpeech(access.settings, model, input, request.signal, fetcher);
-        return new Response(new Uint8Array(audio), { headers: { "Content-Type": "audio/wav", "Content-Length": String(audio.length), "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
-      } catch (error) { return errorResponse(error); }
-    },
     async status(request: Request) {
       const settings = config();
       return jsonResponse({ configured: settings.ready, authorized: !!readSession(request.headers.get("cookie"), settings, now()), model: settings.ready ? settings.model : null });
@@ -70,10 +58,11 @@ export function createAIHandlers(deps: Dependencies = {}) {
     async plan(request: Request) {
       try {
         const access = await authorize(request); requireJson(request);
-        const body = await boundedJson(request) as { tracks?: unknown };
+        const body = await boundedJson(request) as { tracks?: unknown; blockName?: unknown };
         const tracks = parseTracks(body?.tracks);
+        const blockName = parseBlockName(body?.blockName);
         await spend(request, access);
-        return jsonResponse(await planWithGemini(access.settings, tracks, request.signal, fetcher));
+        return jsonResponse(await planWithGroq(access.settings, tracks, request.signal, fetcher, blockName));
       } catch (error) { return errorResponse(error); }
     },
     async test(request: Request) {
@@ -81,7 +70,7 @@ export function createAIHandlers(deps: Dependencies = {}) {
         const access = await authorize(request); requireJson(request);
         await boundedJson(request, 1024);
         await spend(request, access);
-        return jsonResponse(await testGemini(access.settings, request.signal, fetcher));
+        return jsonResponse(await testGroq(access.settings, request.signal, fetcher));
       } catch (error) { return errorResponse(error); }
     },
   };

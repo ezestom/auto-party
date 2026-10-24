@@ -1,37 +1,35 @@
 "use client";
 
-import { useEffect, useState, useRef, useSyncExternalStore } from "react";
+import { useEffect, useState, useRef } from "react";
 import Image from "next/image";
 import PartyPanel from "./PartyPanel";
 import DeckPanel from "./DeckPanel";
 import MixerCenter from "./MixerCenter";
 import LibraryPanel from "../library/LibraryPanel";
+import LibraryDrawer from "../library/LibraryDrawer";
 import Laser from "../ui/Laser";
 import VJMiniPlayer from "../vj/VJMiniPlayer";
 import AIAutoDJButton from "../ai/AIAutoDJButton";
+import AIPointer from "../ai/AIPointer";
 import AIConnectionModal from "../ai/APIKeyModal";
 import { useAIConnectionStore } from "../../stores/aiConnectionStore";
-import DJMCModal from "../ai/DJMCModal";
 import SettingsModal from "../settings/SettingsModal";
 import { useDeckStore } from "../../stores/deckStore";
 import { useMixerStore } from "../../stores/mixerStore";
 import { useVJStore } from "../../stores/vjStore";
 import { useSettingsStore } from "../../stores/settingsStore";
-import { Music, Radio, Cpu, Wifi, Zap, Tv, Settings, Mic } from "lucide-react";
+import { useLibraryStore } from "../../stores/libraryStore";
+import { Music, Radio, Cpu, Wifi, Zap, Settings } from "lucide-react";
 import { getAudioEngine } from "../../lib/audio/AudioEngine";
 import { vjChannel } from "../../lib/vj/vjChannel";
-
-const subscribeViewport = (onChange: () => void) => {
-  window.addEventListener("resize", onChange);
-  return () => window.removeEventListener("resize", onChange);
-};
-const compactLibrary = () => window.innerHeight < 800 || window.innerWidth < 1280;
 
 export default function DJConsole() {
   useEffect(() => {
     // Remove the legacy browser credential; new sessions are managed by HttpOnly cookies.
     try { localStorage.removeItem("eze_mix_gemini_api_key"); } catch {}
     void useAIConnectionStore.getState().refresh();
+    void useLibraryStore.getState().initLibrary();
+    void useVJStore.getState().loadVideos();
   }, []);
   const [partyMode, setPartyMode] = useState(false);
   const deckA = useDeckStore((s) => s.decks.A);
@@ -41,16 +39,13 @@ export default function DJConsole() {
   const channelB = useMixerStore((s) => s.channels.B);
   const crossfader = useMixerStore((s) => s.crossfader);
 
-  const compact = useSyncExternalStore(subscribeViewport, compactLibrary, () => false);
-  const [libraryPreference, setLibraryPreference] = useState<boolean | null>(null);
-  const isLibraryOpen = libraryPreference ?? !compact;
+  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+  const libraryTriggerRef = useRef<HTMLButtonElement>(null);
+  const libraryReturnRef = useRef<HTMLButtonElement | null>(null);
   const [isRecording, setIsRecording] = useState(false);
-  const [isMCOpen, setIsMCOpen] = useState(false);
   const [clockTime, setClockTime] = useState("");
   const [isAudioReady, setIsAudioReady] = useState(false);
   const [selectedMobileDeck, setSelectedMobileDeck] = useState<"A" | "MIXER" | "B">("A");
-  const [isShortScreen, setIsShortScreen] = useState(false);
-  const [isNarrow, setIsNarrow] = useState(false);
   const [isPortraitMode, setIsPortraitMode] = useState(false);
 
   // Measure screen height and width for responsive layout
@@ -58,10 +53,7 @@ export default function DJConsole() {
     const checkViewport = () => {
       const w = window.innerWidth;
       const h = window.innerHeight;
-      setIsShortScreen(h < 550);
-      setIsNarrow(w < 768);
-      // Portrait mode is active when width < 768 AND height > width
-      setIsPortraitMode(w < 1280);
+      setIsPortraitMode(w < 1024 && h >= w);
     };
     checkViewport();
     window.addEventListener("resize", checkViewport);
@@ -180,7 +172,11 @@ export default function DJConsole() {
 
   // Render the actual audio position. Playback continues independently of screen frames.
   useEffect(() => {
-    const update = () => getAudioEngine().syncPlayheads();
+    const update = () => {
+      const engine = getAudioEngine();
+      engine.syncPlayheads();
+      setIsAudioReady(engine.ctx?.state === "running");
+    };
     const timer = window.setInterval(update, 50);
     document.addEventListener("visibilitychange", update);
     return () => {
@@ -211,6 +207,8 @@ export default function DJConsole() {
 
   const masterBpm = (deckA.bpm + deckB.bpm) / 2;
   const anyPlaying = deckA.isPlaying || deckB.isPlaying;
+  const audioPlaying = isAudioReady && anyPlaying;
+  const audioState = audioPlaying ? "playing" : isAudioReady ? "ready" : "suspended";
 
   const { color: laserColor, intensity: laserIntensity } = laserParams;
 
@@ -228,7 +226,7 @@ export default function DJConsole() {
         <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden">
           <Laser
             speed={0.4}
-            offset={isLibraryOpen ? (isShortScreen ? 120 : (isNarrow ? 160 : 225)) : 32}
+            offset={32}
             color={laserColor}
             thickness={8 * laserIntensity}
             core={1.5 * laserIntensity}
@@ -283,9 +281,9 @@ export default function DJConsole() {
 
           {/* Center status (Desktop / Wide screen display) */}
           <div className="console-header-status hidden md:flex items-center gap-4 lg:gap-7 shrink-0">
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full transition-all duration-300 ${isAudioReady ? "bg-[#00ff88] shadow-[0_0_8px_#00ff88]" : "bg-[#555570]"}`} />
-              <span className="font-mono text-[9.5px] text-text-muted tracking-wider uppercase font-bold">Audio Engine</span>
+            <div id="audio-engine-indicator" data-state={audioState} aria-label={`Audio engine: ${audioState}`} className="flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full transition-all duration-300 ${audioPlaying ? "bg-[#00ff88] shadow-[0_0_8px_#00ff88]" : "bg-[#555570]"}`} />
+              <span className="font-mono text-[9.5px] tracking-wider uppercase font-bold" style={{ color: audioPlaying ? "#00ff88" : "#8888a0" }}>Audio Engine</span>
             </div>
             <div className="flex items-center gap-2">
               <Cpu size={12} className="text-text-muted" />
@@ -306,9 +304,11 @@ export default function DJConsole() {
             {/* Library toggle */}
             <button
               id="library-toggle-btn"
-              aria-label={isLibraryOpen ? "Ocultar biblioteca" : "Mostrar biblioteca"}
+              ref={libraryTriggerRef}
+              aria-label={isLibraryOpen ? "Hide library" : "Show library"}
               aria-expanded={isLibraryOpen}
-              onClick={() => setLibraryPreference(!isLibraryOpen)}
+              aria-controls="media-library-drawer"
+              onClick={() => { libraryReturnRef.current = libraryTriggerRef.current; setIsLibraryOpen(!isLibraryOpen); }}
               style={{
                 borderColor: isLibraryOpen ? "#ff6b00" : "#28283d",
                 color: isLibraryOpen ? "#ff6b00" : "#9999b0",
@@ -318,60 +318,15 @@ export default function DJConsole() {
               className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3.5 py-1 sm:py-1.5 text-[9px] sm:text-[10px] font-mono font-black tracking-wider rounded-lg border cursor-pointer uppercase transition-all shrink-0"
             >
               <Music size={11} />
-              <span className="hidden xs:inline">Library</span>
+              <span>Library</span>
             </button>
 
             {/* AI Auto DJ */}
-            <button aria-pressed={partyMode} onClick={() => setPartyMode(!partyMode)} className="px-3 py-2 border border-[#00ff88] rounded-lg text-[#00ff88] text-xs font-bold shrink-0">{partyMode ? "Consola manual" : "Modo Fiesta"}</button>
+            <button aria-pressed={partyMode} onClick={() => setPartyMode(!partyMode)} className="px-3 py-2 border border-[#00ff88] rounded-lg text-[#00ff88] text-xs font-bold shrink-0">{partyMode ? "Manual console" : "Party mode"}</button>
             {!partyMode && <AIAutoDJButton />}
-
-            {/* DJ MC / Live Host */}
-            <button
-              id="dj-mc-btn"
-              onClick={() => setIsMCOpen(true)}
-              style={{
-                borderColor: "#ff950070",
-                color: "#ff9500",
-                backgroundColor: "#ff950018",
-                boxShadow: "0 0 12px rgba(255,149,0,0.25)",
-              }}
-              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 text-[9px] sm:text-[10px] font-mono font-black tracking-wider rounded-lg border cursor-pointer hover:bg-[#ff9500]25 hover:text-white uppercase transition-all shrink-0"
-              title="Abrir DJ MC / Host en vivo"
-            >
-              <Mic size={11} className="text-[#ff9500]" />
-              <span>DJ MC</span>
-            </button>
 
             {/* VJ Mini Player */}
             <VJMiniPlayer />
-
-            {/* VJ Display Window */}
-            <button
-              id="vj-display-btn"
-              onClick={() => {
-                const currentActive = useVJStore.getState().activeVideo;
-                const allVideos = useVJStore.getState().videos;
-                if (!currentActive && allVideos.length > 0) {
-                  useVJStore.getState().setActiveVideo(allVideos[0]);
-                } else if (currentActive) {
-                  useVJStore.getState().setActiveVideo(currentActive);
-                }
-
-                if (typeof window !== "undefined") {
-                  window.open("/vj", "EZE_MIX_VJ_WINDOW", "width=1280,height=720,menubar=no,toolbar=no");
-                }
-              }}
-              style={{
-                borderColor: "#00d4ff70",
-                color: "#00d4ff",
-                backgroundColor: "#00d4ff18",
-              }}
-              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 text-[9px] sm:text-[10px] font-mono font-black tracking-wider rounded-lg border cursor-pointer hover:bg-[#00d4ff]25 hover:text-white uppercase transition-all shadow-[0_0_12px_rgba(0,212,255,0.2)] shrink-0"
-              title="Open VJ Display Window for Monitor 2 Projector/TV"
-            >
-              <Tv size={11} className="text-[#00d4ff]" />
-              <span className="hidden sm:inline">VJ Display</span>
-            </button>
 
             {/* Record */}
             <button
@@ -392,6 +347,7 @@ export default function DJConsole() {
             {/* Settings */}
             <button
               id="settings-btn"
+              aria-label="Open settings"
               onClick={() => useSettingsStore.getState().setIsOpen(true)}
               style={{
                 borderColor: "#28283d",
@@ -399,14 +355,14 @@ export default function DJConsole() {
                 backgroundColor: "transparent",
               }}
               className="flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-lg border cursor-pointer hover:border-[#ff6b00] hover:text-white hover:bg-[#ff6b0015] transition-all shrink-0"
-              title="Ajustes de Consola (Preferencias, Audio, AI)"
+              title="Settings"
             >
               <Settings size={12} />
             </button>
         </header>
 
         {/* ══════════════════════════════
-            MOBILE PORTRAIT DECK SWITCHER (Visible exclusively on mobile portrait: width < 768 && height > width)
+            MOBILE PORTRAIT DECK SWITCHER (Portrait screens below 1024px)
         ══════════════════════════════ */}
         {isPortraitMode && !partyMode && (
           <div onKeyDown={(event) => {
@@ -469,28 +425,22 @@ export default function DJConsole() {
         >
           {partyMode && <PartyPanel />}
           <section id="console-panel-A" aria-label="Deck A" className="console-slot console-deck-slot" data-active={selectedMobileDeck === "A"}>
-            <DeckPanel deckId="A" color="#ff6b00" isLibraryOpen={isLibraryOpen} />
+            <DeckPanel deckId="A" color="#ff6b00" isLibraryOpen={false} />
           </section>
           <section id="console-panel-MIXER" aria-label="Master mixer" className="console-slot console-mixer-slot" data-active={selectedMobileDeck === "MIXER"}>
-            <MixerCenter isLibraryOpen={isLibraryOpen} />
+            <MixerCenter isLibraryOpen={false} />
           </section>
           <section id="console-panel-B" aria-label="Deck B" className="console-slot console-deck-slot" data-active={selectedMobileDeck === "B"}>
-            <DeckPanel deckId="B" color="#00d4ff" isLibraryOpen={isLibraryOpen} />
+            <DeckPanel deckId="B" color="#00d4ff" isLibraryOpen={false} />
           </section>
         </main>
 
         {/* ══════════════════════════════
-            ROW 3 — EMBEDDED SONG LIBRARY
+            MEDIA LIBRARY DRAWER
         ══════════════════════════════ */}
-        <div
-          data-open={isLibraryOpen && !partyMode}
-          className="console-library shrink-0 overflow-hidden transition-[height] duration-300 ease-in-out relative z-20"
-          style={{
-            height: isLibraryOpen && !partyMode ? "clamp(200px, 25dvh, 260px)" : 0,
-          }}
-        >
-          <LibraryPanel isOpen={isLibraryOpen} onClose={() => setLibraryPreference(false)} />
-        </div>
+        <LibraryDrawer open={isLibraryOpen} onOpenChange={setIsLibraryOpen} triggerRef={libraryReturnRef}>
+          <LibraryPanel />
+        </LibraryDrawer>
 
         {/* ══════════════════════════════
             ROW 4 — STATUS BAR (Scrollable on small devices)
@@ -507,7 +457,7 @@ export default function DJConsole() {
               { label: "Master BPM", value: masterBpm.toFixed(1), color: "#ffffff" },
               { label: "Key A", value: deckA.track?.key || "—", color: "#ff6b00" },
               { label: "Key B", value: deckB.track?.key || "—", color: "#00d4ff" },
-              { label: "Harmonic", value: "Sin analizar", color: "#9999b0" },
+              { label: "Harmonic", value: "Not analyzed", color: "#9999b0" },
               { label: "Latency", value: "—", color: "#9999b0" },
               { label: "Buffer", value: "Auto", color: "#9999b0" },
             ].map(({ label, value, color }) => (
@@ -525,9 +475,9 @@ export default function DJConsole() {
               </div>
             )}
             <div className="flex items-center gap-1.5 sm:gap-2">
-              <Radio size={10} className={isAudioReady ? "text-[#00ff88]" : "text-[#555570]"} />
-              <span className={`font-mono text-[8px] sm:text-[9px] font-black tracking-widest uppercase transition-colors ${isAudioReady ? "text-[#00ff88]" : "text-[#555570]"}`}>
-                {isAudioReady ? "Audio Engine Ready" : "Audio Engine Suspended"}
+              <Radio size={10} className={audioPlaying ? "text-[#00ff88]" : "text-[#555570]"} />
+              <span className={`font-mono text-[8px] sm:text-[9px] font-black tracking-widest uppercase transition-colors ${audioPlaying ? "text-[#00ff88]" : "text-[#555570]"}`}>
+                {audioPlaying ? "Audio Engine Playing" : isAudioReady ? "Audio Engine Ready" : "Audio Engine Suspended"}
               </span>
             </div>
           </div>
@@ -535,8 +485,8 @@ export default function DJConsole() {
       </div>
 
       <AIConnectionModal />
+      <AIPointer onLibraryChange={setIsLibraryOpen} returnRef={libraryReturnRef} />
       <SettingsModal />
-      <DJMCModal isOpen={isMCOpen} onClose={() => setIsMCOpen(false)} />
     </>
   );
 }

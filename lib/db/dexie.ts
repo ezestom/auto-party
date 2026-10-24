@@ -6,6 +6,8 @@ export interface DbTrack {
   artist: string;
   bpm: number;
   key: string;
+  audioStart?: number;
+  audioEnd?: number;
   duration: number; // in seconds
   color: string;
   audioData: ArrayBuffer; // stores the binary audio file data

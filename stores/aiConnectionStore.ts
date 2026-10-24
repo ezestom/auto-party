@@ -1,11 +1,11 @@
 "use client";
 import { create } from "zustand";
-import { getAIStatus, unlockAI, logoutAI, testAIConnection } from "../lib/ai/geminiClient";
+import { getAIStatus, unlockAI, logoutAI, testAIConnection } from "../lib/ai/aiClient";
 import { AIError, reasonMessage, type PlanResult } from "../lib/ai/contract";
 
 export type ConnectionState = "unknown" | "unconfigured" | "locked" | "ready" | "checking" | "connected" | "error";
-export const connectionLabels: Record<ConnectionState, string> = { unknown: "IA sin comprobar", unconfigured: "IA sin configurar",
-  locked: "IA requiere acceso", ready: "Gemini listo para probar", checking: "Comprobando conexión…", connected: "Gemini conectado", error: "Error de conexión IA" };
+export const connectionLabels: Record<ConnectionState, string> = { unknown: "AI not checked", unconfigured: "AI not configured",
+  locked: "AI access required", ready: "Groq ready to test", checking: "Checking connection…", connected: "Groq connected", error: "AI connection error" };
 interface ConnectionStore {
   status: ConnectionState; configured: boolean; authorized: boolean; model: string | null; checkedAt: string | null;
   message: string; showModal: boolean; useRemoteAI: boolean;
@@ -48,7 +48,7 @@ export const useAIConnectionStore = create<ConnectionStore>((set) => ({
   },
   recordPlan: plan => {
     revision++;
-    if (plan.source === "gemini") set({ status: "connected", configured: true, authorized: true, model: plan.model || "Gemini", checkedAt: new Date().toISOString(), message: "" });
+    if (plan.source === "groq") set({ status: "connected", configured: true, authorized: true, model: plan.model || "Groq", checkedAt: new Date().toISOString(), message: "" });
     else if (plan.reason && plan.reason !== "LOCAL_SELECTED") set({ ...failure(new AIError(plan.reason)), checkedAt: null });
   },
 }));

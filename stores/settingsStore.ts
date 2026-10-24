@@ -2,118 +2,69 @@
 
 import { create } from "zustand";
 
-export interface SettingsState {
-  isOpen: boolean;
-  activeTab: "controls" | "audio" | "aidj" | "shortcuts";
-
-  // Controls Settings
+type SettingsTab = "controls" | "audio" | "aidj" | "shortcuts";
+interface Preferences {
   lockPlayingDeck: boolean;
   autoPlayOnLoad: boolean;
-  quantizeBeats: number; // 1 beat default
-
-  // Audio & Mixer Settings
   autoGainEnabled: boolean;
-  targetLufs: number; // -14 dBFS default
   crossfaderCurve: "LIN" | "CUT" | "CRV";
-
-  // AI DJ & VJ Settings
-  aiDefaultDuration: number; // 4, 8, 16s
-  vjBeatReactivity: number; // 1.0 default
-
-  // Actions
+  aiDefaultDuration: number;
+  aiEffectsEnabled: boolean;
+  aiPointerEnabled: boolean;
+}
+export interface SettingsState extends Preferences {
+  isOpen: boolean;
+  activeTab: SettingsTab;
   setIsOpen: (open: boolean) => void;
-  setActiveTab: (tab: "controls" | "audio" | "aidj" | "shortcuts") => void;
-  setLockPlayingDeck: (val: boolean) => void;
-  setAutoPlayOnLoad: (val: boolean) => void;
-  setQuantizeBeats: (val: number) => void;
-  setAutoGainEnabled: (val: boolean) => void;
-  setTargetLufs: (val: number) => void;
-  setCrossfaderCurve: (val: "LIN" | "CUT" | "CRV") => void;
-  setAiDefaultDuration: (val: number) => void;
-  setVjBeatReactivity: (val: number) => void;
+  setActiveTab: (tab: SettingsTab) => void;
+  setLockPlayingDeck: (value: boolean) => void;
+  setAutoPlayOnLoad: (value: boolean) => void;
+  setAutoGainEnabled: (value: boolean) => void;
+  setCrossfaderCurve: (value: "LIN" | "CUT" | "CRV") => void;
+  setAiDefaultDuration: (value: number) => void;
+  setAiEffectsEnabled: (value: boolean) => void;
+  setAiPointerEnabled: (value: boolean) => void;
   resetDefaults: () => void;
 }
 
 const STORAGE_KEY = "eze_mix_settings";
+const defaults: Preferences = { lockPlayingDeck: true, autoPlayOnLoad: false, autoGainEnabled: true, crossfaderCurve: "LIN", aiDefaultDuration: 8, aiEffectsEnabled: true, aiPointerEnabled: true };
 
-const defaultSettings = {
-  isOpen: false,
-  activeTab: "controls" as const,
-  lockPlayingDeck: true,
-  autoPlayOnLoad: false,
-  quantizeBeats: 1,
-  autoGainEnabled: true,
-  targetLufs: -14,
-  crossfaderCurve: "LIN" as const,
-  aiDefaultDuration: 8,
-  vjBeatReactivity: 1.0,
-};
-
-const loadInitialSettings = () => {
-  if (typeof window === "undefined") return defaultSettings;
+function loadPreferences(): Preferences {
+  const saved = { ...defaults };
+  if (typeof window === "undefined") return saved;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return { ...defaultSettings, ...parsed, isOpen: false };
+    if (!raw) return saved;
+    const parsed = JSON.parse(raw);
+    for (const key of ["lockPlayingDeck", "autoPlayOnLoad", "autoGainEnabled", "aiEffectsEnabled", "aiPointerEnabled"] as const) {
+      if (typeof parsed[key] === "boolean") saved[key] = parsed[key];
     }
-  } catch {}
-  return defaultSettings;
-};
+    if (["LIN", "CUT", "CRV"].includes(parsed.crossfaderCurve)) saved.crossfaderCurve = parsed.crossfaderCurve;
+    if ([4, 8, 16].includes(parsed.aiDefaultDuration)) saved.aiDefaultDuration = parsed.aiDefaultDuration;
+  } catch { /* Safe defaults also cover older or damaged preferences. */ }
+  return saved;
+}
 
-const saveSettings = (state: Partial<SettingsState>) => {
+function savePreferences(state: Preferences) {
   if (typeof window === "undefined") return;
-  try {
-    const toSave = { ...state };
-    delete toSave.isOpen;
-    delete toSave.activeTab;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
-  } catch {}
-};
+  const { lockPlayingDeck, autoPlayOnLoad, autoGainEnabled, crossfaderCurve, aiDefaultDuration, aiEffectsEnabled, aiPointerEnabled } = state;
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ lockPlayingDeck, autoPlayOnLoad, autoGainEnabled, crossfaderCurve, aiDefaultDuration, aiEffectsEnabled, aiPointerEnabled })); } catch {}
+}
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
-  ...loadInitialSettings(),
-
-  setIsOpen: (isOpen) => set({ isOpen }),
-  setActiveTab: (activeTab) => set({ activeTab }),
-
-  setLockPlayingDeck: (lockPlayingDeck) => {
-    set({ lockPlayingDeck });
-    saveSettings(get());
-  },
-  setAutoPlayOnLoad: (autoPlayOnLoad) => {
-    set({ autoPlayOnLoad });
-    saveSettings(get());
-  },
-  setQuantizeBeats: (quantizeBeats) => {
-    set({ quantizeBeats });
-    saveSettings(get());
-  },
-  setAutoGainEnabled: (autoGainEnabled) => {
-    set({ autoGainEnabled });
-    saveSettings(get());
-  },
-  setTargetLufs: (targetLufs) => {
-    set({ targetLufs });
-    saveSettings(get());
-  },
-  setCrossfaderCurve: (crossfaderCurve) => {
-    set({ crossfaderCurve });
-    saveSettings(get());
-  },
-  setAiDefaultDuration: (aiDefaultDuration) => {
-    set({ aiDefaultDuration });
-    saveSettings(get());
-  },
-  setVjBeatReactivity: (vjBeatReactivity) => {
-    set({ vjBeatReactivity });
-    saveSettings(get());
-  },
-
+  ...loadPreferences(), isOpen: false, activeTab: "controls",
+  setIsOpen: isOpen => set({ isOpen }),
+  setActiveTab: activeTab => set({ activeTab }),
+  setLockPlayingDeck: lockPlayingDeck => { set({ lockPlayingDeck }); savePreferences(get()); },
+  setAutoPlayOnLoad: autoPlayOnLoad => { set({ autoPlayOnLoad }); savePreferences(get()); },
+  setAutoGainEnabled: autoGainEnabled => { set({ autoGainEnabled }); savePreferences(get()); },
+  setCrossfaderCurve: crossfaderCurve => { set({ crossfaderCurve }); savePreferences(get()); },
+  setAiDefaultDuration: aiDefaultDuration => { set({ aiDefaultDuration }); savePreferences(get()); },
+  setAiEffectsEnabled: aiEffectsEnabled => { set({ aiEffectsEnabled }); savePreferences(get()); },
+  setAiPointerEnabled: aiPointerEnabled => { set({ aiPointerEnabled }); savePreferences(get()); },
   resetDefaults: () => {
-    set(defaultSettings);
-    if (typeof window !== "undefined") {
-      localStorage.removeItem(STORAGE_KEY);
-    }
+    set(defaults);
+    if (typeof window !== "undefined") { try { localStorage.removeItem(STORAGE_KEY); } catch {} }
   },
 }));

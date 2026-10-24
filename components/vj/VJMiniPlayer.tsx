@@ -1,125 +1,83 @@
 "use client";
 
-import { useRef, useEffect, useState, useSyncExternalStore } from "react";
+import { memo, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { GripHorizontal, Tv, X } from "lucide-react";
 import { useVJStore } from "../../stores/vjStore";
-import { useDeckStore } from "../../stores/deckStore";
-import { PictureInPicture2 } from "lucide-react";
+import VJDisplay from "./VJDisplay";
 
-const subscribePipSupport = () => () => {};
-const readPipSupport = () => document.pictureInPictureEnabled === true;
+type Position = { x: number; y: number };
 
-export default function VJMiniPlayer() {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const { activeVideo, isPlaying } = useVJStore();
-  const isPipAvailable = useSyncExternalStore(subscribePipSupport, readPipSupport, () => false);
-  const [isPipActive, setIsPipActive] = useState<boolean>(false);
+export default memo(function VJMiniPlayer() {
+  const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [position, setPosition] = useState<Position>({ x: 8, y: 80 });
+  const [message, setMessage] = useState("");
+  const panel = useRef<HTMLElement>(null);
+  const projection = useRef<Window | null>(null);
+  const drag = useRef<{ id: number; dx: number; dy: number } | null>(null);
+  const initialized = useRef(false);
 
+  const clamp = (point: Position) => ({
+    x: Math.max(8, Math.min(point.x, window.innerWidth - (panel.current?.offsetWidth || 280) - 8)),
+    y: Math.max(8, Math.min(point.y, window.innerHeight - (panel.current?.offsetHeight || 194) - 8)),
+  });
 
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const onEnterPip = () => setIsPipActive(true);
-    const onLeavePip = () => setIsPipActive(false);
-
-    video.addEventListener("enterpictureinpicture", onEnterPip);
-    video.addEventListener("leavepictureinpicture", onLeavePip);
-
-    return () => {
-      video.removeEventListener("enterpictureinpicture", onEnterPip);
-      video.removeEventListener("leavepictureinpicture", onLeavePip);
-    };
+    setMounted(true);
+    const resize = () => setPosition(point => clamp(point));
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
   }, []);
 
-  useEffect(() => {
-    if (videoRef.current) {
-      if (isPlaying) {
-        videoRef.current.play().catch(() => {});
-      } else {
-        videoRef.current.pause();
-      }
+  const openVisuals = () => {
+    const store = useVJStore.getState();
+    if (!store.activeVideo && store.videos.length) store.setActiveVideo(store.videos[0]);
+    if (!projection.current || projection.current.closed) {
+      projection.current = window.open("/vj", "EZE_MIX_VJ_WINDOW", "popup,width=1280,height=720,menubar=no,toolbar=no");
+      setMessage(projection.current ? "" : "Allow pop-ups to open the TV / projector window.");
     }
-  }, [isPlaying, activeVideo]);
-
-  const handleTogglePiP = async () => {
-    try {
-      let currentActive = useVJStore.getState().activeVideo;
-      const allVideos = useVJStore.getState().videos;
-      if (!currentActive && allVideos.length > 0) {
-        currentActive = allVideos[0];
-        useVJStore.getState().setActiveVideo(currentActive);
-      }
-
-      if (!currentActive?.url) {
-        console.warn("No video loaded yet for Float PiP");
-        return;
-      }
-
-      const video = videoRef.current;
-      if (!video) return;
-
-      if (document.pictureInPictureElement) {
-        await document.exitPictureInPicture();
-      } else {
-        await video.play().catch(() => {});
-        await video.requestPictureInPicture();
-      }
-    } catch (err) {
-      console.warn("PiP toggle caught safely:", err);
+    if (!initialized.current) {
+      setPosition(clamp({ x: window.innerWidth - 296, y: window.innerHeight - 234 }));
+      initialized.current = true;
     }
+    setOpen(true);
   };
 
-  const deckA = useDeckStore((s) => s.decks.A);
-  const deckB = useDeckStore((s) => s.decks.B);
-  const isMusicPlaying = deckA.isPlaying || deckB.isPlaying;
-
-  return (
-    <div className="flex items-center gap-2">
-      {/* Real visible video preview thumbnail - only shown when a video is loaded */}
-      {activeVideo ? (
-        <div
-          className="relative w-10 sm:w-14 h-6 sm:h-8 rounded overflow-hidden border border-[#33334d] bg-black shrink-0 transition-all duration-150"
-          style={{
-            boxShadow: isMusicPlaying ? `0 0 10px ${activeVideo.color || "#00d4ff"}60` : "none",
-            borderColor: isMusicPlaying ? `${activeVideo.color || "#00d4ff"}80` : "#33334d",
-          }}
-        >
-          <video
-            ref={videoRef}
-            src={activeVideo.url || undefined}
-            autoPlay
-            loop
-            muted
-            playsInline
-            className="w-full h-full object-cover"
-          />
-        </div>
-      ) : (
-        <video
-          ref={videoRef}
-          className="hidden"
-          muted
-          playsInline
-        />
-      )}
-
-      {/* Trigger Picture-in-Picture Floating Window */}
-      {isPipAvailable && (
-        <button
-          onClick={handleTogglePiP}
-          style={{
-            borderColor: isPipActive ? "#00ff88" : "#00d4ff70",
-            color: isPipActive ? "#00ff88" : "#00d4ff",
-            backgroundColor: isPipActive ? "#00ff8818" : "#00d4ff18",
-            boxShadow: isPipActive ? "0 0 12px rgba(0,255,136,0.3)" : "none",
-          }}
-          className="flex items-center gap-1 px-2.5 py-1 text-[8px] font-mono font-black rounded border cursor-pointer hover:text-white uppercase transition-all shrink-0"
-          title="Pop out floating VJ Video window (Picture-in-Picture) for Monitor 2 / Projector"
-        >
-          <PictureInPicture2 size={10} />
-          {isPipActive ? "PiP ACTIVE" : "FLOAT PIP"}
-        </button>
-      )}
-    </div>
-  );
-}
+  return <>
+    <button id="vj-display-btn" onClick={openVisuals} aria-label="Open visuals" aria-expanded={open}
+      title="Open DJ preview and TV / projector"
+      className="flex items-center gap-1 px-3 py-1.5 text-[10px] font-mono font-black rounded-lg border border-[#00d4ff70] text-[#00d4ff] bg-[#00d4ff18] cursor-pointer uppercase shrink-0">
+      <Tv size={12} /> Visuals
+    </button>
+    {mounted && createPortal(
+      <section ref={panel} aria-label="DJ video preview" className="vj-preview"
+        style={{ left: position.x, top: position.y, display: open ? "block" : "none" }}>
+        <header className="vj-preview-header">
+          <div role="button" tabIndex={0} aria-label="Move DJ preview" className="vj-preview-drag"
+            onKeyDown={event => {
+              const moves: Record<string, Position> = { ArrowLeft: { x: -16, y: 0 }, ArrowRight: { x: 16, y: 0 }, ArrowUp: { x: 0, y: -16 }, ArrowDown: { x: 0, y: 16 } };
+              const move = moves[event.key];
+              if (move) { event.preventDefault(); setPosition(point => clamp({ x: point.x + move.x, y: point.y + move.y })); }
+              if (event.key === "Escape") setOpen(false);
+            }}
+            onPointerDown={event => {
+              if (event.button !== 0) return;
+              const bounds = panel.current!.getBoundingClientRect();
+              drag.current = { id: event.pointerId, dx: event.clientX - bounds.x, dy: event.clientY - bounds.y };
+              event.currentTarget.setPointerCapture(event.pointerId);
+            }}
+            onPointerMove={event => {
+              if (drag.current?.id !== event.pointerId) return;
+              setPosition(clamp({ x: event.clientX - drag.current.dx, y: event.clientY - drag.current.dy }));
+            }}
+            onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }}>
+            <GripHorizontal size={14} /> DJ preview
+          </div>
+          <button onClick={() => setOpen(false)} aria-label="Close DJ preview"><X size={15} /></button>
+        </header>
+        {message && <p role="alert" className="px-3 py-2 text-xs text-amber-200">{message}</p>}
+        <div className="vj-preview-screen"><VJDisplay preview /></div>
+      </section>, document.body)}
+  </>;
+});

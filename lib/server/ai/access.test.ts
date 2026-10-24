@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { readConfig, createSession, readSession, checkAccessCode, checkOrigin } from "./access";
 
-const env = { NODE_ENV: "development", GEMINI_API_KEY: "server-test-secret", AI_ACCESS_CODE: "invite-code-123456",
+const env = { NODE_ENV: "development", GROQ_API_KEY: "server-test-secret", AI_ACCESS_CODE: "invite-code-123456",
   AI_SESSION_SECRET: "s".repeat(48), AI_ALLOWED_ORIGINS: "http://localhost:3000" };
 test("configuration is closed when credentials or production shared limits are missing", () => {
   expect(readConfig({}).ready).toBe(false);

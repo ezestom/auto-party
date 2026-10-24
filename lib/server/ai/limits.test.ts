@@ -20,5 +20,5 @@ test("a blocked session never spends the shared global quota", async () => {
 test("shared quota errors fail closed without exposing the storage token", async () => {
   const fetcher = vi.fn().mockRejectedValue(new Error("redis-secret"));
   const quota = new RedisQuota("https://test.upstash.io", "redis-secret", fetcher);
-  await expect(quota.consume([{ key: "global", limit: 1, ttl: 60 }])).rejects.toThrow("No se pudo verificar el límite de uso.");
+  await expect(quota.consume([{ key: "global", limit: 1, ttl: 60 }])).rejects.toThrow("Unable to verify the usage limit.");
 });

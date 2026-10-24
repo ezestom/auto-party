@@ -173,3 +173,43 @@ Las notas previas sobre ondas limitadas a 800 puntos y ESLint pendiente quedan r
 - LCD compacto en una fila para decks medianos; se conserva el formato de dos filas en móviles. Se mantienen las pestañas y la disposición existente para pantallas menores. Sin cambios al motor de audio ni al logo.
 - Regresión nueva: redimensionar de 1920x920 a 1500x820, 1366x768 y 1280x650, forzando la biblioteca abierta y comprobando ambos decks sin instrumentos recortados ni scroll central. La prueba falló con el código anterior y pasa con el ajuste.
 - Verificados nueve escenarios responsive previos y el recorrido útil de faders: once escenarios de Chrome distintos aprobados. Capturas de 1500px y 1280px inspeccionadas. ESLint y compilación de producción con TypeScript aprobados. Sin despliegue.
+
+## Migración a Groq — 24 de octubre de 2026
+
+Las notas anteriores de Gemini/Google TTS son históricas. Auto-DJ ahora usa openai/gpt-oss-20b en Groq; DJ MC usa canopylabs/orpheus-v1-english, voces Troy/Hannah/Austin y anuncios de hasta 180 caracteres en inglés. Conserva acceso por código, límites compartidos y mezcla local. Variables GROQ_API_KEY, GROQ_MODEL y GROQ_TTS_MODEL; ver CONFIGURACION-IA.md y SPEC-GROQ-VOICE.md. Las pruebas usan respuestas simuladas; falta la clave del usuario para verificar la cuenta real.
+
+Verificación real: la clave Groq configurada respondió HTTP 200 en /api/ai/test con openai/gpt-oss-20b. Orpheus devolvió model_terms_required: el administrador debe revisar y aceptar sus términos en la consola de Groq. La app muestra esta condición y un enlace; la voz aún no se pudo verificar en vivo.
+
+## Voz retirada temporalmente — 24 de octubre de 2026
+
+Se retiraron DJ MC, su endpoint /api/ai/speech, sus proveedores y configuración TTS para concentrar el producto en decks, mezclador, biblioteca, visuales y Auto-DJ. Groq se mantiene para planificar sets. Las notas previas sobre voz son históricas.
+
+## Fiesta por bloques y biblioteca inferior — 24 de octubre de 2026
+
+Cola editable con pedidos prioritarios y al final, bloques curados persistidos localmente, contexto acotado de bloque en Groq, separación de catálogo y búsqueda, cesión de control manual y reanudación explícita. Política de final audible con detección de silencio de extremos y preparación anticipada cancelable; no implica reconocimiento de frases ni beatmatching. Pestaña inferior Media library arrastrable, con espacio propio por encima del estado para conservar controles visibles.
+
+## Filter sweep y Echo out — 24 de octubre de 2026
+
+Groq propone efectos mediante un campo enumerado y validado. Ejecución local por recetas: filtro independiente del control manual; echo con feedback/volumen/cola limitados y temporización sobre el reloj de audio. Auto es ocasional; Off persistente y presets de una sola transición accesibles desde Party mode y Settings. Se verificó audio renderizado estéreo con OfflineAudioContext, decaimiento de repeticiones, restauración del filtro y cancelación. No implica control del navegador por IA, chat de comandos libres, cuantización a beats, scratch ni spinback.
+
+## Biblioteca como panel único — 24 de octubre de 2026
+
+Se eliminó la altura de un tercio. Cabecera y biblioteca ahora pertenecen al mismo elemento persistente: el panel se anima entre la cabecera cerrada y media pantalla, con seguimiento del puntero. Render por portal y fondo opaco por delante del láser. Conserva reserva de espacio, botón superior, foco de retorno, Escape y bloqueo de controles ocultos para teclado.
+
+## Mano visual del Auto-DJ — 24 de octubre de 2026
+
+- El SVG del usuario se sirve como `/ai-hand.svg`, acompañado únicamente por la etiqueta visible `AI`.
+- La presentación sigue `preparation` del Auto-DJ: abre la biblioteca, señala el tema y el deck preparado y se retira. No genera clics ni controla el audio; las transiciones no esperan la animación.
+- Mouse, toque, teclado y rueda tienen prioridad inmediata. Retoma tras tres segundos sin interacción mientras siga vigente la preparación; no actúa durante pulsaciones mantenidas, edición de texto ni otros diálogos. Cerrar la biblioteca cancela la presentación de esa preparación.
+- Solo cierra una biblioteca que haya abierto ella misma. Respeta búsquedas y decisiones manuales. No reanuda por sí sola una sesión musical suspendida por controles manuales.
+- `Settings → Auto-DJ → AI hand` permite ocultarla y guarda la preferencia. Se oculta con `prefers-reduced-motion`.
+
+## Temáticas y programa de fiesta — 24 de octubre de 2026
+
+- Se reutilizan los bloques guardados como temáticas creadas por el DJ. La biblioteca tiene pestañas y un editor para crear incluso una temática vacía, renombrar, asignar canciones y eliminarla. Importar agrega canciones a la temática que estaba seleccionada al comenzar. Mirar una pestaña no cambia el audio.
+- El programa permite guardar etapas de temática + minutos, reordenarlas, editar duraciones y quitarlas. Puede tener una o varias etapas y la misma temática puede aparecer más de una vez. Se activa explícitamente.
+- El motor cuenta tiempo de audio sin duplicar los fundidos y excluye el control manual y las pausas. Prepara la siguiente temática para una transición natural; no corta al cumplirse el tiempo. La última temática continúa sonando.
+- Las temáticas se rellenan al agotarse: primero canciones aún no escuchadas y, luego, otro recorrido, evitando repetir inmediatamente cuando hay alternativas. Una temática con un único tema también funciona.
+- El DJ puede elegir Play this theme next o Play next en una etapa: el tema actual sigue y el reloj del destino se reinicia al entrar su primera canción. Los pedidos manuales se conservan. Se mantiene la protección de los decks en reproducción.
+- La manito AI se aproxima al Play del deck entrante y muestra una pulsación breve al iniciarse de verdad. No envía clicks ni controla el reloj del motor.
+- Verificación: pruebas de reglas, cambios de duración, prioridad manual, reloj durante fundidos, arranque con música ya sonando y borrado de temas. Prueba real en Chrome de programa de un minuto con repetición, cambio natural de Cumbia a Rock y vuelta manual. Biblioteca comprobada también tras importar 20 archivos en horizontal.

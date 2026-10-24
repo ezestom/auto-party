@@ -28,7 +28,7 @@ export default function TransportBar({ deckId, color }: TransportBarProps) {
             : "linear-gradient(145deg, #1c1c2c, #141420)",
           boxShadow: deck.cuePoint !== null ? `0 0 10px ${color}35` : "none",
         }}
-        title="Volver al punto CUE y pausar"
+        title="Return to the CUE point and pause"
       >
         <Disc size={11} />
         CUE
@@ -71,7 +71,7 @@ export default function TransportBar({ deckId, color }: TransportBarProps) {
         id={`save-cue-btn-${deckId}`}
         onClick={() => setCue(deckId)}
         disabled={!deck.track}
-        title="Guardar la posición actual como CUE y pausar"
+        title="Save the current position as CUE and pause"
         className="flex-1 py-1.5 sm:py-2.5 flex flex-col items-center justify-center gap-0.5 sm:gap-1 font-mono font-black text-[8.5px] sm:text-[9.5px] rounded-xl border cursor-pointer hover:brightness-125 uppercase transition-all duration-150 shadow-sm"
         style={{
           borderColor: deck.cuePoint !== null ? color : "#28283c",
@@ -81,7 +81,7 @@ export default function TransportBar({ deckId, color }: TransportBarProps) {
         }}
       >
         <BookmarkPlus size={11} />
-        GUARDAR CUE
+        SAVE CUE
       </button>
     </div>
   );

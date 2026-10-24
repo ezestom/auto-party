@@ -13,7 +13,7 @@ class Param {
 }
 class Node {
   connect = vi.fn(); disconnect = vi.fn(); gain = new Param();
-  frequency = new Param(); Q = new Param(); threshold = new Param(); ratio = new Param(); knee = new Param();
+  frequency = new Param(); Q = new Param(); delayTime = new Param(); threshold = new Param(); ratio = new Param(); knee = new Param();
   fftSize = 128; getFloatTimeDomainData = vi.fn((a: Float32Array) => a.fill(0));
 }
 class Source extends Node {
@@ -26,6 +26,7 @@ class Context {
   audioWorklet = { addModule: vi.fn().mockResolvedValue(undefined) };
   createGain = vi.fn(() => new Node()); createBiquadFilter = vi.fn(() => new Node());
   createDynamicsCompressor = vi.fn(() => new Node()); createAnalyser = vi.fn(() => new Node());
+  createDelay = vi.fn(() => new Node());
   createBufferSource = vi.fn(() => new Source()); createOscillator = vi.fn();
   createMediaStreamDestination = vi.fn(() => Object.assign(new Node(), { stream: {} }));
   resume = vi.fn(async () => { this.state = "running"; }); close = vi.fn(async () => {});
@@ -191,4 +192,21 @@ describe("audio transport and routing", () => {
     expect(data.getInt16(46, true)).toBeLessThan(-16000);
     expect(data.getUint32(40, true)).toBe(8);
   });
+  test('manual filter changes cancel transition effects while VU updates leave them running',async()=>{
+    load();await engine.resume();useDeckStore.getState().setPlaying('A',true);useMixerStore.getState().setCrossfader(0);
+    expect(engine.startTransitionEffect('A','echo_out',2,120)).toBe('echo_out');
+    expect(engine.hasTransitionEffects()).toBe(true);
+    useMixerStore.getState().setVU('A',.4,.3);expect(engine.hasTransitionEffects()).toBe(true);
+    useMixerStore.getState().setFilter('A',.7);expect(engine.hasTransitionEffects()).toBe(false);
+    expect(useMixerStore.getState().channels.A.filter).toBe(.7);
+  });
+  test('an echo tail can finish after the fully faded-out deck is released',async()=>{
+    load();await engine.resume();useDeckStore.getState().setPlaying('A',true);
+    useMixerStore.getState().setCrossfader(0);useMixerStore.getState().setAutoDuration(2);useMixerStore.getState().triggerAutoCrossfade('B');
+    expect(engine.startTransitionEffect('A','echo_out',2,120)).toBe('echo_out');
+    time(2);engine.syncPlayheads();
+    useDeckStore.getState().setPlaying('A',false);expect(engine.hasTransitionEffects()).toBe(true);
+    time(4);engine.syncPlayheads();expect(engine.hasTransitionEffects()).toBe(false);
+  });
+
 });

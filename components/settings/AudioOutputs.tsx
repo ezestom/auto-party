@@ -22,7 +22,7 @@ export default function AudioOutputs() {
       try {
         const list = await navigator.mediaDevices.enumerateDevices();
         if (active) setDevices(list.filter(d => d.kind === "audiooutput" && d.deviceId));
-      } catch { if (active) setError("No se pudieron consultar las salidas de audio."); }
+      } catch { if (active) setError("Could not list audio outputs."); }
     };
     void refresh();
     navigator.mediaDevices.addEventListener("devicechange", refresh);
@@ -35,7 +35,7 @@ export default function AudioOutputs() {
     try {
       if (id === undefined) {
         const media = navigator.mediaDevices as MediaDevices & { selectAudioOutput?: () => Promise<MediaDeviceInfo> };
-        if (!media.selectAudioOutput) throw new Error("La selección adicional no está disponible en este navegador.");
+        if (!media.selectAudioOutput) throw new Error("Device selection is not available in this browser.");
         const device = await media.selectAudioOutput();
         id = device.deviceId;
         setDevices(previous => [...previous.filter(d => d.deviceId !== id), device]);
@@ -43,24 +43,24 @@ export default function AudioOutputs() {
       await getAudioEngine().setMonitorOutput(kind, id);
       setSelected(previous => ({ ...previous, [kind]: getAudioEngine().getMonitorOutputId(kind) }));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "No se pudo conectar la salida.");
+      setError(cause instanceof Error ? cause.message : "Could not connect the output.");
     } finally { setBusy(false); }
   }
 
-  return <section className="p-3.5 rounded-xl border border-[#1e1e30] bg-[#0c0c16] space-y-3">
-    <h3 className="font-mono text-white font-bold text-xs">Salidas de monitoreo</h3>
-    <p className="text-[11px] text-[#9999b0]">El público escucha la salida predeterminada del sistema. Elegí otro dispositivo físico para preescucha o booth. La preescucha queda apagada hasta que selecciones una salida.</p>
-    {!supported && <p role="status" className="text-xs text-[#ffd600]">Este navegador no permite elegir salidas independientes.</p>}
-    {(["headphones", "booth"] as const).map(kind => <div key={kind} className="space-y-1">
-      <label className="block text-xs text-white" htmlFor={kind + "-output"}>{kind === "headphones" ? "Auriculares / CUE" : "Booth"}</label>
-      <div className="flex gap-2">
-        <select id={kind + "-output"} value={selected[kind]} disabled={!supported || busy} onChange={e => void change(kind, e.target.value)} className="min-w-0 flex-1 bg-[#141422] text-white border border-[#2a2a3d] rounded p-2 text-xs">
-          <option value="">Desconectado</option>
-          {devices.map((d, i) => <option key={d.deviceId} value={d.deviceId}>{d.label || "Salida " + (i + 1)}</option>)}
-        </select>
-        {supported && typeof navigator.mediaDevices !== "undefined" && "selectAudioOutput" in navigator.mediaDevices && <button type="button" disabled={busy} onClick={() => void change(kind)} className="text-xs text-[#ff6b00]">Elegir dispositivo</button>}
-      </div>
-    </div>)}
-    {error && <p role="alert" className="text-xs text-red-400">{error}</p>}
+  return <section>
+    <p className="settings-description">Choose separate devices for private listening or extra speakers. Leave them off if you only use your system speakers. Output selections apply to this session.</p>
+    {!supported ? <p role="status" className="settings-note">This browser does not support separate audio outputs. Music still plays through your system speakers.</p> :
+      (["headphones", "booth"] as const).map(kind => <div key={kind} className="settings-output">
+        <label htmlFor={kind + "-output"}>{kind === "headphones" ? "Headphones / CUE" : "Extra speakers / Booth"}</label>
+        <div className="settings-output-controls">
+          <select id={kind + "-output"} value={selected[kind]} disabled={busy} onChange={event => void change(kind, event.target.value)}>
+            <option value="">Off</option>
+            {devices.map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || "Output " + (index + 1)}</option>)}
+          </select>
+          {typeof navigator.mediaDevices !== "undefined" && "selectAudioOutput" in navigator.mediaDevices &&
+            <button type="button" className="settings-secondary" aria-label={kind === "headphones" ? "Choose headphones output" : "Choose extra speakers output"} disabled={busy} onClick={() => void change(kind)}>Choose device</button>}
+        </div>
+      </div>)}
+    {error && <p role="alert" className="settings-note text-red-300">{error}</p>}
   </section>;
 }

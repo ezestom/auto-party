@@ -7,7 +7,7 @@ const read = path => readFile(path, "utf8").catch(error => { if (error.code === 
 // Remove the deprecated public credential without displaying or copying it.
 for (const name of [".env", ".env.local"]) {
   const path = new URL(name, root), original = await read(path);
-  const cleaned = original.split(/\r?\n/).filter(line => !/^\s*(?:export\s+)?NEXT_PUBLIC_GEMINI_API_KEY\s*=/.test(line)).join("\n");
+  const cleaned = original.split(/\r?\n/).filter(line => !/^\s*(?:export\s+)?(?:NEXT_PUBLIC_(?:GEMINI|GROQ)_API_KEY|GEMINI_(?:API_KEY|MODEL|TTS_MODEL)|GROQ_TTS_MODEL)\s*=/.test(line)).join("\n");
   if (original && original !== cleaned) await writeFile(path, cleaned, { mode: 0o600 });
 }
 const local = new URL(".env.local", root);
@@ -27,4 +27,4 @@ for (const line of defaults) {
 }
 await writeFile(local, content.trim() + "\n", { mode: 0o600 });
 console.log("Preparado " + fileURLToPath(local) + ". No se mostraron secretos.");
-console.log("Completá GEMINI_API_KEY. Para publicar, configurá Redis y el origen HTTPS. Reiniciá el servidor.");
+console.log("Completá GROQ_API_KEY. Para publicar, configurá Redis y el origen HTTPS. Reiniciá el servidor.");

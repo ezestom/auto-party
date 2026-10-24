@@ -6,6 +6,8 @@ export interface TrackMetadata {
   artist: string;
   bpm: number;
   key: string;
+  audioStart?: number;
+  audioEnd?: number;
   duration: number; // in seconds
   color: string;
   peaks?: number[]; // Real amplitude envelope saved during import

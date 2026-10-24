@@ -35,7 +35,7 @@ test("server endpoints require the access code and HttpOnly cookie before any AI
   expect(invalid.status()).toBe(422);
   expect((await request.delete("/api/ai/session", { headers: { origin } })).status()).toBe(200);
 });
-test("connection panel tests Gemini without asking for a Google key and removes legacy storage", async ({ page }) => {
+test("connection panel tests Groq without asking for a provider key and removes legacy storage", async ({ page }) => {
   let authorized = false;
   await page.addInitScript(() => localStorage.setItem("eze_mix_gemini_api_key", "deprecated-fixture-key"));
   await page.route("**/api/ai/status", route => route.fulfill({ json: { configured: true, authorized, model: "test-model" } }));
@@ -45,39 +45,39 @@ test("connection panel tests Gemini without asking for a Google key and removes 
   });
   await page.route("**/api/ai/test", route => route.fulfill({ json: { connected: true, model: "test-model", checkedAt: new Date().toISOString() } }));
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto("/");
-  await page.getByRole("button", { name: "Modo Fiesta", exact: true }).click();
-  await page.getByRole("button", { name: "Ver conexión IA", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Conexión IA de la fiesta" });
-  await expect(dialog.getByRole("status")).toContainText("IA requiere acceso");
-  await dialog.getByLabel("Código de acceso", { exact: true }).fill("fixture-code");
-  await dialog.getByRole("button", { name: "Conectar y probar", exact: true }).click();
-  await expect(dialog.getByRole("status")).toHaveText("Gemini conectado");
+  await page.getByRole("button", { name: "Party mode", exact: true }).click();
+  await page.getByRole("button", { name: "View AI connection", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Party AI connection" });
+  await expect(dialog.getByRole("status")).toContainText("AI access required");
+  await dialog.getByLabel("Access code", { exact: true }).fill("fixture-code");
+  await dialog.getByRole("button", { name: "Connect and test", exact: true }).click();
+  await expect(dialog.getByRole("status")).toHaveText("Groq connected");
   expect(await page.evaluate(() => localStorage.getItem("eze_mix_gemini_api_key"))).toBeNull();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: "test-results/ai-connection-phone.png", fullPage: true });
   await page.keyboard.press("Escape"); await expect(dialog).not.toBeVisible();
 });
-for (const source of ["gemini", "local"] as const) test("party mode accurately identifies " + source + " planning", async ({ page }) => {
+for (const source of ["groq", "local"] as const) test("party mode accurately identifies " + source + " planning", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const direct: string[] = [];
-  await page.route("https://generativelanguage.googleapis.com/**", route => { direct.push(route.request().url()); return route.abort(); });
+  await page.route("https://api.groq.com/**", route => { direct.push(route.request().url()); return route.abort(); });
   await page.route("**/api/ai/status", route => route.fulfill({ json: { configured: true, authorized: true, model: "test-model" } }));
   await page.route("**/api/ai/setlist", async route => {
     const body = route.request().postDataJSON();
     expect(Object.keys(body)).toEqual(["tracks"]);
     expect(body.tracks.every((track: object) => !Object.hasOwn(track, "audioData") && !Object.hasOwn(track, "peaks"))).toBe(true);
-    await route.fulfill(source === "gemini" ? { json: { source: "gemini", model: "test-model", djComment: "Fiesta", setlist: [
+    await route.fulfill(source === "groq" ? { json: { source: "groq", model: "test-model", djComment: "Fiesta", setlist: [
       { trackId: "fixture-b", mixPoint: 16, transitionStyle: "smooth" }, { trackId: "fixture-a", mixPoint: 16, transitionStyle: "smooth" },
     ] } } : { status: 502, json: { error: { code: "PROVIDER_AUTH" } } });
   });
-  await page.goto("/"); await expect(page.locator("#library-bottom-panel")).toBeVisible();
+  await page.goto("/"); await expect(page.locator("#library-toggle-btn")).toHaveAttribute("aria-expanded", "false");
   await seedParty(page);
-  await page.getByRole("button", { name: "Modo Fiesta", exact: true }).click();
-  await page.getByRole("button", { name: "Iniciar fiesta", exact: true }).click();
-  await expect(page.getByTestId("ai-plan-source")).toContainText(source === "gemini" ? "Gemini conectado · plan recibido" : "Automático local · orden por BPM");
-  if (source === "local") await expect(page.getByText("Google rechazó la autenticación del servidor.", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Pausar fiesta", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Party mode", exact: true }).click();
+  await page.getByRole("button", { name: "Start party", exact: true }).click();
+  await expect(page.getByTestId("ai-plan-source")).toContainText(source === "groq" ? "Groq connected · plan received" : "Local Auto-DJ · sorted by BPM");
+  if (source === "local") await expect(page.getByText("Groq rejected the server credentials.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Pause party", exact: true })).toBeVisible();
   expect(direct).toEqual([]);
   await page.screenshot({ path: "test-results/party-ai-" + source + ".png", fullPage: true });
-  await page.getByRole("button", { name: "Pausar fiesta", exact: true }).click();
+  await page.getByRole("button", { name: "Pause party", exact: true }).click();
 });

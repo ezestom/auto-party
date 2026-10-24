@@ -1,5 +1,7 @@
 "use client";
 
+import { TransitionEffects } from "./TransitionEffects";
+import type { TransitionEffect } from "../ai/transitionEffects";
 import { useMixerStore } from "../../stores/mixerStore";
 import { useDeckStore } from "../../stores/deckStore";
 
@@ -24,6 +26,8 @@ export class AudioEngine {
   public crossfaderGains: Record<"A" | "B", GainNode | null> = { A: null, B: null };
   public cueActiveGains: Record<"A" | "B", GainNode | null> = { A: null, B: null };
   public analysers: Record<"A" | "B", AnalyserNode | null> = { A: null, B: null };
+
+  public transitionEffects: Record<"A" | "B", TransitionEffects | null> = { A: null, B: null };
 
   // Master / Monitor nodes
   public musicBus: GainNode | null = null;
@@ -249,7 +253,7 @@ export class AudioEngine {
 
       // Crossfader connection path
       this.crossfaderGains[d] = ctx.createGain();
-      this.channelVolumes[d]!.connect(this.crossfaderGains[d]!);
+      this.transitionEffects[d] = new TransitionEffects(ctx, this.channelVolumes[d]!, this.crossfaderGains[d]!, this.musicBus!);
       this.crossfaderGains[d]!.connect(this.musicBus!);
 
       // VU Meter Analyser
@@ -261,11 +265,14 @@ export class AudioEngine {
 
   private setupStoreSubscription() {
     this.subscriptions.push(useMixerStore.subscribe((state, previous) => {
+      const controls = ["gain", "volume", "filter", "eqLo", "eqMid", "eqHi"] as const;
+      if ((["A", "B"] as const).some(deck => controls.some(key => state.channels[deck][key] !== previous.channels[deck][key]))) this.cancelTransitionEffects();
+      if ((state.crossfader !== previous.crossfader && !state.isAutoCrossfading && !previous.isAutoCrossfading) || (previous.isAutoCrossfading && !state.isAutoCrossfading && state.crossfader > .001 && state.crossfader < .999) || (state.isAutoCrossfading && state.autoTarget !== previous.autoTarget)) this.cancelTransitionEffects();
       if (state.isAutoCrossfading !== previous.isAutoCrossfading || state.autoTarget !== previous.autoTarget || state.autoDuration !== previous.autoDuration || state.isSmartEQ !== previous.isSmartEQ) this.scheduleAutoCrossfade();
       this.updateMixerParams(state);
     }));
     this.subscriptions.push(useSettingsStore.subscribe((state, previous) => {
-      if (state.crossfaderCurve !== previous.crossfaderCurve) { this.scheduleAutoCrossfade(); this.updateMixerParams(useMixerStore.getState()); }
+      if (state.crossfaderCurve !== previous.crossfaderCurve) { this.cancelTransitionEffects(); this.scheduleAutoCrossfade(); this.updateMixerParams(useMixerStore.getState()); }
     }));
 
     this.subscriptions.push(useDeckStore.subscribe((state, previous) => {
@@ -273,6 +280,10 @@ export class AudioEngine {
       for (const d of ["A", "B"] as const) {
         const deck = state.decks[d];
         const before = previous.decks[d];
+        const mixer = useMixerStore.getState();
+        const fullyOut = d === "A" ? mixer.crossfader >= .999 : mixer.crossfader <= .001;
+        const completedRelease = !deck.isPlaying && !mixer.isAutoCrossfading && fullyOut;
+        if (deck.track?.id !== before.track?.id || deck.seekRevision !== before.seekRevision || deck.tempoOffset !== before.tempoOffset || deck.loopActive !== before.loopActive || deck.loopLength !== before.loopLength || deck.loopStart !== before.loopStart || (deck.isPlaying !== before.isPlaying && !completedRelease && deck.currentTime < (deck.track?.duration || Infinity) - .1)) this.cancelTransitionEffects(d);
         if (!deck.isPlaying) {
           if (this.deckSources[d]) this.stop(d, deck.seekRevision === before.seekRevision);
           if (deck.seekRevision !== before.seekRevision) {
@@ -439,7 +450,23 @@ export class AudioEngine {
     return Math.max(0, Math.min(duration, position));
   }
 
+  public startTransitionEffect(deck: "A" | "B", effect: TransitionEffect, duration: number, bpm: number): TransitionEffect {
+    if (!this.initialized || this.ctx?.state !== "running" || !this.deckSources[deck]) return "none";
+    const fader = useMixerStore.getState().crossfader;
+    if ((deck === "A" && fader > .001) || (deck === "B" && fader < .999)) return "none";
+    this.cancelTransitionEffects();
+    try { return this.transitionEffects[deck]?.start(effect, duration, bpm) || "none"; }
+    catch (error) { console.warn("[Transition FX] Simple fade fallback:", error instanceof Error ? error.message : "Audio effect unavailable"); this.transitionEffects[deck]?.cancel(); return "none"; }
+  }
+
+  public cancelTransitionEffects(deck?: "A" | "B") {
+    for (const id of deck ? [deck] : ["A", "B"] as const) this.transitionEffects[id]?.cancel();
+  }
+
+  public hasTransitionEffects() { return !!(this.transitionEffects.A?.active || this.transitionEffects.B?.active); }
+
   public syncPlayheads() {
+    this.transitionEffects.A?.tick(); this.transitionEffects.B?.tick();
     this.syncAutoCrossfade();
     for (const d of ["A", "B"] as const) {
       if (this.deckBuffers[d]) useDeckStore.getState().updatePlaybackTime(d, this.getPlaybackTime(d));
@@ -447,6 +474,7 @@ export class AudioEngine {
   }
 
   public loadTrack(deckId: "A" | "B", buffer: AudioBuffer) {
+    this.cancelTransitionEffects(deckId);
     this.stop(deckId, false);
     this.deckBuffers[deckId] = buffer;
     this.transport[deckId] = { offset: 0, startedAt: this.ctx?.currentTime || 0, rate: 1 };
@@ -529,7 +557,7 @@ export class AudioEngine {
     await this.resume();
     if (revision !== this.outputRevisions[kind]) return;
     const node = kind === "headphones" ? this.headphoneOutputNode : this.boothVolumeNode;
-    if (!this.ctx || !node) throw new Error("El motor de audio no está disponible.");
+    if (!this.ctx || !node) throw new Error("The audio engine is not available.");
     const disconnect = (output: NonNullable<typeof this.monitorOutputs[typeof kind]>) => {
       output.audio.pause();
       output.audio.srcObject = null;
@@ -542,7 +570,7 @@ export class AudioEngine {
       return;
     }
     const audio = new Audio();
-    if (!("setSinkId" in audio)) throw new Error("Este navegador no permite elegir una salida independiente.");
+    if (!("setSinkId" in audio)) throw new Error("This browser does not support separate audio outputs.");
     const bus = this.ctx.createMediaStreamDestination();
     audio.srcObject = bus.stream;
     const output = { audio, bus, id: deviceId };
@@ -566,6 +594,7 @@ export class AudioEngine {
     this.autoFadeTimer = null;
     this.subscriptions.splice(0).forEach(unsubscribe => unsubscribe());
     this.initialized = false;
+    for (const deck of ["A", "B"] as const) { this.transitionEffects[deck]?.dispose(); this.transitionEffects[deck] = null; }
     this.masterAnalyser?.disconnect();
     this.masterAnalyser = null;
     if (this.animationFrameId !== null) {

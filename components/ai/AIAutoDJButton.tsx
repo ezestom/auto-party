@@ -7,7 +7,7 @@ export default function AIAutoDJButton() {
   const {
     isActive, status, activate, deactivate, skipToNext, planSource,
     djComment, setlist, currentIndex, errorMessage,
-    autoFXDrops, toggleAutoFXDrops,
+    autoFXDrops, toggleAutoFXDrops, resume,
   } = useAIDJStore();
 
   const handleClick = () => {
@@ -29,7 +29,7 @@ export default function AIAutoDJButton() {
       <button
         id="ai-autodj-btn"
         onClick={handleClick}
-        aria-label={isAnalyzing ? "Cancelar preparación" : undefined}
+        aria-label={isAnalyzing ? "Cancel preparation" : undefined}
         className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-mono font-black tracking-wider rounded-lg border cursor-pointer uppercase transition-all disabled:cursor-wait relative overflow-hidden"
         style={{
           borderColor: isActive
@@ -54,7 +54,7 @@ export default function AIAutoDJButton() {
             ? `AI DJ Active — ${djComment || "Mixing..."}`
             : hasError
               ? errorMessage
-              : "Iniciar fiesta automática con tu biblioteca local"
+              : "Start an automatic party with your local library"
         }
       >
         {/* Animated background pulse when active */}
@@ -76,10 +76,11 @@ export default function AIAutoDJButton() {
         {isAnalyzing
           ? "Analyzing..."
           : isActive
-            ? planSource === "gemini" ? "GEMINI ON" : "AUTO LOCAL"
+            ? ["manual", "error"].includes(status) ? "AUTO PAUSED" : planSource === "groq" ? "GROQ ON" : "AUTO LOCAL"
             : "AI DJ"}
       </button>
 
+      {isActive && ["manual", "error"].includes(status) && <button onClick={resume} className="min-h-10 px-3 rounded-lg border border-cyan-500 text-cyan-300 text-xs">Resume Auto-DJ</button>}
       {/* Auto FX Drops toggle button */}
       {isActive && (
         <button
@@ -91,7 +92,7 @@ export default function AIAutoDJButton() {
             boxShadow: autoFXDrops ? "0 0 10px rgba(255,0,119,0.3)" : "none",
           }}
           className="px-2 py-1.5 text-[8.5px] font-mono font-black border rounded-lg cursor-pointer tracking-wider hover:text-white transition-all flex items-center gap-1 shrink-0"
-          title="Auto FX Drops: Dispara automáticamente Risers y Sub Drops en las transiciones de la IA"
+          title="Auto FX Drops: trigger risers and sub drops during AI transitions"
         >
           <span>⚡</span>
           <span>DROPS</span>

@@ -1,139 +1,73 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useState, useRef } from "react";
 import { useLibraryStore } from "../../stores/libraryStore";
 import { useVJStore } from "../../stores/vjStore";
 import LibraryRow from "./LibraryRow";
 import VJLibraryRow from "./VJLibraryRow";
-import { Search, ListFilter, ArrowUpDown, X, FolderOpen, Upload, Loader2, Film, Video, Tv } from "lucide-react";
+import ThemeTabs from './ThemeTabs';
+import { usePartyBlockStore } from '../../stores/partyBlockStore';
+import { Search, ListFilter, ArrowUpDown, Upload, Loader2, Film } from "lucide-react";
 
-import VJMiniPlayer from "../vj/VJMiniPlayer";
+import { mediaKind } from "../../lib/library/mediaFiles";
 
-interface LibraryPanelProps {
-  isOpen: boolean;
-  onClose: () => void;
-}
-
-type DirectoryEntry = { kind: "file"; getFile: () => Promise<File> } | DirectoryHandle;
-interface DirectoryHandle { kind: "directory"; values: () => AsyncIterable<DirectoryEntry> }
-const directoryAttributes = { webkitdirectory: "", directory: "" };
-
-export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
+export default function LibraryPanel() {
   const {
-    tracks,
+    tracks: filteredTracks,
     searchQuery,
     sortField,
     importStatus,
     reanalyzeBpm,
     analysisMessage,
-    initLibrary,
     setSearchQuery,
     setSort,
   } = useLibraryStore();
+  const {blocks,browsingId}=usePartyBlockStore();
+  const theme=blocks.find(block=>block.id===browsingId);
+  const tracks=theme?filteredTracks.filter(track=>theme.trackIds.includes(track.id)):filteredTracks;
 
-  const { videos, activeVideo, loadVideos, importVideo } = useVJStore();
+  const { videos, activeVideo, importVideo } = useVJStore();
 
   const [isDragging, setIsDragging] = useState(false);
+  const [importMessage, setImportMessage] = useState("");
   const [activeMobileTab, setActiveMobileTab] = useState<"music" | "vj">("music");
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const folderInputRef = useRef<HTMLInputElement>(null);
-  const videoInputRef = useRef<HTMLInputElement>(null);
-
-  // Initialize library on mount
-  useEffect(() => {
-    initLibrary();
-    loadVideos();
-  }, [initLibrary, loadVideos]);
 
   const processFilesQueue = async (files: File[]) => {
-    const audioFiles: File[] = [];
-    const videoFiles: File[] = [];
-
-    files.forEach((file) => {
-      if (
-        file.type.startsWith("video/") ||
-        file.name.endsWith(".mp4") ||
-        file.name.endsWith(".webm") ||
-        file.name.endsWith(".mov") ||
-        file.name.endsWith(".mkv")
-      ) {
-        videoFiles.push(file);
-      } else {
-        audioFiles.push(file);
-      }
-    });
-
-    // Import audio files
-    if (audioFiles.length > 0) {
-      const { importTrack, setImportStatus } = useLibraryStore.getState();
-      setImportStatus({
-        active: true,
-        current: 0,
-        total: audioFiles.length,
-        filename: audioFiles[0]?.name || "",
-      });
-
-      for (let i = 0; i < audioFiles.length; i++) {
-        const file = audioFiles[i];
-        setImportStatus({ current: i + 1, filename: file.name });
+    const destination=usePartyBlockStore.getState().browsingId;
+    const media = files.map(file => ({ file, kind: mediaKind(file) })).filter(item => item.kind !== null);
+    const skipped = files.length - media.length;
+    const { importTrack, setImportStatus } = useLibraryStore.getState();
+    const failures: string[] = [];
+    let songs = 0, videos = 0;
+    setImportMessage("");
+    if (!media.length) {
+      setImportMessage(files.length ? "No supported audio or video files were selected." : "No files were selected.");
+      return;
+    }
+    setImportStatus({ active: true, current: 0, total: media.length, filename: "" });
+    try {
+      for (const [index, { file, kind }] of media.entries()) {
+        setImportStatus({ current: index + 1, filename: file.name });
         try {
-          await importTrack(file);
-        } catch (err) {
-          console.error("Failed to import audio:", file.name, err);
+          if (kind === "video") { await importVideo(file); videos++; }
+          else { const track=await importTrack(file); usePartyBlockStore.getState().addTracks(destination,[track.id]); songs++; }
+        } catch {
+          failures.push(file.name);
         }
       }
-
+    } finally {
       setImportStatus({ active: false, current: 0, total: 0, filename: "" });
     }
-
-    // Import video files
-    if (videoFiles.length > 0) {
-      for (const vFile of videoFiles) {
-        try {
-          await importVideo(vFile);
-        } catch (err) {
-          console.error("Failed to import video:", vFile.name, err);
-        }
-      }
-    }
-  };
-
-  const handleDirectoryScan = async () => {
-    const pickDirectory = (window as Window & { showDirectoryPicker?: () => Promise<DirectoryHandle> }).showDirectoryPicker;
-    if (pickDirectory) {
-      try {
-        const dirHandle = await pickDirectory.call(window);
-        const files: File[] = [];
-
-        async function scan(handle: DirectoryHandle) {
-          for await (const entry of handle.values()) {
-            if (entry.kind === "file") {
-              const file = await entry.getFile();
-              files.push(file);
-            } else if (entry.kind === "directory") {
-              await scan(entry);
-            }
-          }
-        }
-
-        await scan(dirHandle);
-
-        if (files.length > 0) {
-          await processFilesQueue(files);
-        }
-        return;
-      } catch (err) {
-        console.warn("Directory Picker cancelled:", err);
-      }
-    }
-
-    folderInputRef.current?.click();
+    setImportMessage(`Imported: ${songs} audio files and ${videos} videos.${skipped ? ` Skipped: ${skipped} non-media files.` : ""}${failures.length ? ` Could not import: ${failures.join(", ")}. The file may be damaged, use an unsupported codec, or be unavailable locally.` : ""}`);
   };
 
   const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
     if (!fileList) return;
-    await processFilesQueue(Array.from(fileList));
+    const files = Array.from(fileList);
+    e.target.value = "";
+    await processFilesQueue(files);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -167,9 +101,7 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`relative w-full h-full bg-[#08080d] border-t border-[#1e1e30] z-20 flex flex-col px-4 py-2 select-none min-h-0 overflow-hidden transition-all duration-300 ease-in-out ${
-        isOpen ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-3 pointer-events-none"
-      }`}
+      className="relative w-full h-full bg-[#08080d] border-t border-[#1e1e30] z-20 flex flex-col px-4 py-2 select-none min-h-0 overflow-hidden"
     >
       {/* Hidden inputs */}
         <>
@@ -181,29 +113,14 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
             onChange={handleFileInputChange}
             className="hidden"
           />
-          <input
-            type="file"
-            ref={videoInputRef}
-            multiple
-            accept="video/*"
-            onChange={handleFileInputChange}
-            className="hidden"
-          />
-          <input
-            type="file"
-            ref={folderInputRef}
-            {...directoryAttributes}
-            multiple
-            onChange={handleFileInputChange}
-            className="hidden"
-          />
         </>
 
       {/* MOBILE TAB TOGGLE (< lg screens) */}
-      <div className="flex lg:hidden items-center justify-between gap-1 pb-1 mb-1 border-b border-[#1e1e2c] shrink-0">
-        <div className="flex items-center gap-1.5">
+      <div className="library-media-tabs flex items-center justify-between gap-1 pb-1 mb-1 border-b border-[#1e1e2c] shrink-0">
+        <div className="flex lg:hidden items-center gap-1.5">
           <button
             onClick={() => setActiveMobileTab("music")}
+            aria-pressed={activeMobileTab === "music"}
             className={`flex items-center gap-1 px-2.5 py-0.5 rounded font-mono text-[9px] font-black uppercase transition-all cursor-pointer ${
               activeMobileTab === "music"
                 ? "bg-[#ff6b00]25 text-[#ff6b00] border border-[#ff6b00] shadow-[0_0_8px_rgba(255,107,0,0.3)]"
@@ -215,6 +132,7 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
           </button>
           <button
             onClick={() => setActiveMobileTab("vj")}
+            aria-pressed={activeMobileTab === "vj"}
             className={`flex items-center gap-1 px-2.5 py-0.5 rounded font-mono text-[9px] font-black uppercase transition-all cursor-pointer ${
               activeMobileTab === "vj"
                 ? "bg-[#00d4ff]25 text-[#00d4ff] border border-[#00d4ff] shadow-[0_0_8px_rgba(0,212,255,0.3)]"
@@ -225,14 +143,13 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
             <span>VJ VIDEO ({videos.length})</span>
           </button>
         </div>
-
-        <button
-          onClick={onClose}
-          className="p-1 text-[#777790] hover:text-white transition-colors cursor-pointer rounded hover:bg-white/5"
-          title="Minimize Library"
-        >
-          <X size={14} />
-        </button>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-1 px-2 py-0.5 bg-[#121218] border border-[#222234] rounded font-mono text-[8px] text-[#9999b5] hover:text-white hover:border-[#00d4ff] transition-all cursor-pointer font-extrabold uppercase shrink-0"
+              >
+                <Upload size={10} className="text-[#00d4ff]" />
+                Import files
+              </button>
       </div>
 
       {/* RESPONSIVE GRID CONTAINER: 1-Column on Mobile, 50/50 Split on Desktop (lg+) */}
@@ -240,6 +157,7 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
         
         {/* LEFT COLUMN: MUSIC LIBRARY (Full width on mobile when active, 6 cols on lg) */}
         <div className={`${activeMobileTab === "music" ? "flex" : "hidden"} lg:flex col-span-12 lg:col-span-6 flex-col h-full min-h-0 lg:border-r border-[#1e1e2c] lg:pr-3 overflow-hidden`}>
+          <ThemeTabs />
           {/* Header bar / Toolbar */}
           <div className="library-toolbar flex items-center justify-between gap-2 pb-1.5 border-b border-[#1e1e2c] mb-1 shrink-0">
             <div className="flex items-center gap-2 shrink-0">
@@ -257,6 +175,7 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                 <Search size={11} className="absolute left-2 text-[#777790] pointer-events-none" />
                 <input
                   type="text"
+                  aria-label="Search music"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search music..."
@@ -264,31 +183,18 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                 />
               </div>
               <button
-                onClick={handleDirectoryScan}
-                className="flex items-center gap-1 px-2 py-0.5 bg-[#121218] border border-[#222234] rounded font-mono text-[8px] text-[#9999b5] hover:text-white hover:border-[#ff6b00] transition-all cursor-pointer font-extrabold uppercase shrink-0"
-              >
-                <FolderOpen size={10} className="text-[#ff6b00]" />
-                Folder
-              </button>
-              <button
                 onClick={reanalyzeBpm}
                 disabled={importStatus.active || !tracks.length}
-                title="Reanalizar BPM de la biblioteca"
-                aria-label="Reanalizar BPM"
+                title="Reanalyze library BPM"
+                aria-label="Reanalyze BPM"
                 className="px-2 py-0.5 bg-[#121218] border border-[#222234] rounded font-mono text-[8px] text-[#9999b5] disabled:opacity-40 cursor-pointer shrink-0"
               >BPM</button>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-1 px-2 py-0.5 bg-[#121218] border border-[#222234] rounded font-mono text-[8px] text-[#9999b5] hover:text-white hover:border-[#00d4ff] transition-all cursor-pointer font-extrabold uppercase shrink-0"
-              >
-                <Upload size={10} className="text-[#00d4ff]" />
-                + Audio
-              </button>
+
             </div>
           </div>
 
-          {analysisMessage && <p role="status" className="text-[10px] text-[#aaaabd] px-2 py-1">{analysisMessage}</p>}
-          <div className="library-table-scroll">
+          {analysisMessage && <p role="status" aria-label="BPM analysis" className="text-[10px] text-[#aaaabd] px-2 py-1">{analysisMessage}</p>}
+          <div className="library-table-scroll" id="theme-song-list" role="tabpanel" aria-labelledby={'theme-tab-'+(browsingId||'all')}>
           {/* Table headers */}
           <div className="grid grid-cols-12 gap-2 items-center font-mono text-[7.5px] font-extrabold text-[#777795] tracking-wider pb-1 border-b border-[#1c1c28] uppercase shrink-0 px-3 select-none">
             <div className="col-span-1">#</div>
@@ -309,7 +215,7 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
             ))}
             {tracks.length === 0 && (
               <div className="py-6 text-center text-[#777790] font-mono text-[9px]">
-                {searchQuery ? `No tracks matching "${searchQuery}"` : "Music library empty."}
+                {searchQuery ? `No tracks matching "${searchQuery}"` : theme ? 'No songs in this theme. Import files or use Edit theme to add music.' : "Music library empty."}
               </div>
             )}
           </div>
@@ -330,29 +236,13 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
               </span>
             </div>
 
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => videoInputRef.current?.click()}
-                className="flex items-center gap-1 px-2 py-0.5 bg-[#121218] border border-[#222234] rounded font-mono text-[8px] text-[#9999b5] hover:text-white hover:border-[#00d4ff] transition-all cursor-pointer font-extrabold uppercase shrink-0"
-              >
-                <Video size={10} className="text-[#00d4ff]" />
-                + Import Video
-              </button>
-              <button
-                id="library-close-btn"
-                onClick={onClose}
-                className="hidden lg:block p-1 text-[#777790] hover:text-white transition-colors cursor-pointer rounded hover:bg-white/5"
-                title="Minimize Library"
-              >
-                <X size={14} />
-              </button>
-            </div>
+
           </div>
 
           {/* Active VJ Video Preview Banner & Controls */}
-          <div className="flex items-center justify-between p-1.5 mb-1 bg-[#0c0c14] border border-[#222238] rounded-lg shrink-0">
+          <div className="library-vj-preview flex items-center justify-between p-1.5 mb-1 bg-[#0c0c14] border border-[#222238] rounded-lg shrink-0">
             <div className="flex items-center gap-2 overflow-hidden">
-              <VJMiniPlayer />
+
               <div className="overflow-hidden leading-none">
                 <div className="font-mono text-[9.5px] font-black text-white truncate uppercase tracking-wide" style={{ color: activeVideo?.color || "#00d4ff" }}>
                   {activeVideo ? activeVideo.title : "NO VIDEO LOADED"}
@@ -372,26 +262,7 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                 </span>
               </div>
 
-              <button
-                onClick={() => {
-                  const currentActive = useVJStore.getState().activeVideo;
-                  const allVideos = useVJStore.getState().videos;
-                  if (!currentActive && allVideos.length > 0) {
-                    useVJStore.getState().setActiveVideo(allVideos[0]);
-                  } else if (currentActive) {
-                    useVJStore.getState().setActiveVideo(currentActive);
-                  }
 
-                  if (typeof window !== "undefined") {
-                    window.open("/vj", "EZE_MIX_VJ_WINDOW", "width=1280,height=720,menubar=no,toolbar=no");
-                  }
-                }}
-                className="flex items-center gap-1 px-2.5 py-1 rounded bg-[#00d4ff]18 border border-[#00d4ff]60 text-[#00d4ff] font-mono text-[8px] font-black uppercase hover:bg-[#00d4ff]30 hover:text-white transition-all cursor-pointer"
-                title="Pop out VJ display window for Monitor 2 Projector/TV"
-              >
-                <Tv size={10} />
-                MONITOR 2 OUT
-              </button>
             </div>
           </div>
 
@@ -414,6 +285,7 @@ export default function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
       </div>
 
       {/* Drag & Drop Visual overlay state */}
+      {importMessage && <p role="status" aria-label="Import results" className="shrink-0 max-h-16 overflow-y-auto py-1 text-[10px] text-[#bcbcd0] select-text">{importMessage}</p>}
       {isDragging && (
         <div className="absolute inset-0 bg-[#0f0f16]/95 border-2 border-dashed border-[#00d4ff] rounded-md flex flex-col items-center justify-center gap-2 z-30 transition-all pointer-events-none">
           <Upload size={24} className="text-[#00d4ff] animate-bounce" />

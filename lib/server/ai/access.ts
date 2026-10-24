@@ -8,9 +8,9 @@ export interface AIConfig {
 }
 export function readConfig(env: Record<string, string | undefined> = process.env): AIConfig {
   const production = env.NODE_ENV === "production";
-  const config = { ready: false, apiKey: env.GEMINI_API_KEY?.trim() || "", accessCode: env.AI_ACCESS_CODE || "",
+  const config = { ready: false, apiKey: env.GROQ_API_KEY?.trim() || "", accessCode: env.AI_ACCESS_CODE || "",
     sessionSecret: env.AI_SESSION_SECRET || "", origins: (env.AI_ALLOWED_ORIGINS || (production ? "" : "http://localhost:3000")).split(",").map(item => item.trim()).filter(Boolean),
-    model: env.GEMINI_MODEL?.trim() || "gemini-3.8-flash", production,
+    model: env.GROQ_MODEL?.trim() || "openai/gpt-oss-20b", production,
     redisUrl: env.UPSTASH_REDIS_REST_URL?.trim() || "", redisToken: env.UPSTASH_REDIS_REST_TOKEN?.trim() || "",
     dailyLimit: positive(env.AI_DAILY_REQUEST_LIMIT, 100, 10000), hourlyLimit: positive(env.AI_SESSION_HOURLY_LIMIT, 6, 60) };
   const originsValid = config.origins.length > 0 && config.origins.every(origin => {
@@ -23,7 +23,7 @@ export function readConfig(env: Record<string, string | undefined> = process.env
       url.pathname === "/" && !url.username && !url.password && !url.search && !url.hash; } catch { /* Invalid configuration stays closed. */ }
   }
   config.ready = !!config.apiKey && config.accessCode.length >= 12 && config.accessCode.length <= 200 && config.sessionSecret.length >= 32 &&
-    /^[a-z0-9][a-z0-9.-]{1,99}$/.test(config.model) && config.dailyLimit > 0 && config.hourlyLimit > 0 && originsValid && redisValid;
+    /^[a-z0-9][a-z0-9.-]{0,49}\/[a-z0-9][a-z0-9.-]{0,99}$/.test(config.model) && config.dailyLimit > 0 && config.hourlyLimit > 0 && originsValid && redisValid;
   return config;
 }
 function positive(value: string | undefined, fallback: number, max: number) {

@@ -10,6 +10,7 @@ export interface VJStateMessage {
   effect?: "NORMAL" | "STROBE" | "GLITCH" | "NEON_WAVE";
   bpm?: number;
   time?: number;
+  sentAt?: number;
   dropText?: string;
 }
 
@@ -30,13 +31,14 @@ class VJChannelManager {
   }
 
   public send(msg: VJStateMessage) {
-    if (typeof window !== "undefined" && ["SET_VIDEO", "CLEAR_VIDEO", "PLAY", "PAUSE"].includes(msg.type)) {
+    if (typeof window !== "undefined" && ["SET_VIDEO", "CLEAR_VIDEO", "PLAY", "PAUSE", "SYNC_TIME"].includes(msg.type)) {
       try {
         const previous = JSON.parse(localStorage.getItem("eze_mix_vj_sync") || "{}");
         const snapshot = msg.type === "CLEAR_VIDEO" ? { type: "CLEAR_VIDEO" }
-          : msg.type === "SET_VIDEO" ? { ...msg, playing: true }
+          : msg.type === "SET_VIDEO" ? { ...msg, playing: true, time: 0, sentAt: Date.now() }
+          : msg.type === "SYNC_TIME" ? { ...previous, ...msg, type: "SET_VIDEO" }
           : { ...previous, playing: msg.type === "PLAY" };
-        localStorage.setItem("eze_mix_vj_sync", JSON.stringify({ ...snapshot, _t: Date.now() }));
+        localStorage.setItem("eze_mix_vj_sync", JSON.stringify({ ...snapshot, _eventType: msg.type, _t: Date.now() }));
       } catch { /* Projection still receives live updates when storage is unavailable. */ }
     }
     this.listeners.forEach(listener => listener(msg));
@@ -51,7 +53,7 @@ class VJChannelManager {
       if (!this.channel && e.key === "eze_mix_vj_sync" && e.newValue) {
         try {
           const msg = JSON.parse(e.newValue);
-          callback(msg);
+          callback({ ...msg, type: msg._eventType || msg.type });
         } catch {}
       }
     };

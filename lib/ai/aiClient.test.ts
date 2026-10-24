@@ -1,15 +1,15 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { generateSetlist, getAIStatus, testAIConnection } from "./geminiClient";
+import { generateSetlist, getAIStatus, testAIConnection } from "./aiClient";
 const tracks = [{ id: "a", title: "One", artist: "User", bpm: 120, key: "—", duration: 180 },
   { id: "b", title: "Two", artist: "User", bpm: 124, key: "—", duration: 200 }];
 afterEach(() => vi.unstubAllGlobals());
-test("planning only contacts our server and explicitly reports Gemini success", async () => {
-  const fetcher = vi.fn().mockResolvedValue(Response.json({ source: "gemini", model: "test-model", djComment: "Fiesta", setlist: [
+test("planning only contacts our server and explicitly reports Groq success", async () => {
+  const fetcher = vi.fn().mockResolvedValue(Response.json({ source: "groq", model: "test-model", djComment: "Fiesta", setlist: [
     { trackId: "b", mixPoint: 24, transitionStyle: "smooth" }, { trackId: "a", mixPoint: 16, transitionStyle: "cut" },
   ] }));
   vi.stubGlobal("fetch", fetcher);
   const result = await generateSetlist(tracks);
-  expect(result.source).toBe("gemini");
+  expect(result.source).toBe("groq");
   expect(result.setlist[0].trackId).toBe("b");
   expect(fetcher.mock.calls[0][0]).toBe("/api/ai/setlist");
   const options = fetcher.mock.calls[0][1];
@@ -21,7 +21,7 @@ test("authentication failures use local mixing with a visible reason", async () 
   expect(await generateSetlist(tracks)).toMatchObject({ source: "local", reason: "PROVIDER_AUTH" });
 });
 test("malformed remote success cannot be advertised as an AI plan", async () => {
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ source: "gemini", setlist: [] })));
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ source: "groq", setlist: [] })));
   expect(await generateSetlist(tracks)).toMatchObject({ source: "local", reason: "INVALID_PROVIDER_RESPONSE" });
 });
 test("session cancellation never returns a plan that could restart playback", async () => {

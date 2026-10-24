@@ -20,6 +20,7 @@ function stereoFixture() {
 test("imported stereo audio keeps detailed peaks, renders them and exposes BPM reanalysis", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
+  await page.locator("#library-toggle-btn").click();
   await page.locator('input[type="file"][accept="audio/*,video/*"]').setInputFiles({
     name: "Stereo - Transients.wav", mimeType: "audio/wav", buffer: stereoFixture(),
   });
@@ -41,10 +42,13 @@ test("imported stereo audio keeps detailed peaks, renders them and exposes BPM r
   expect(Math.max(...saved.detailPeaks.slice(200, 205))).toBeGreaterThan(0.6);
   expect(Math.max(...saved.detailPeaks.slice(400, 450))).toBeLessThan(0.00001);
   await page.getByTitle("Load to Deck A", { exact: true }).click();
+  await page.getByRole("button", { name: "Close library", exact: true }).click();
   await expect(page.getByRole("img", { name: "Onda detallada del deck A", exact: true })).toHaveAttribute("data-peak-count", "1200");
   await expect(page.getByRole("img", { name: "Vista general del deck A", exact: true })).toHaveAttribute("data-peak-count", "800");
-  await page.getByRole("button", { name: "Reanalizar BPM", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("BPM estimados", { timeout: 20000 });
+  await page.locator("#library-toggle-btn").click();
+  await page.getByRole("button", { name: "Reanalyze BPM", exact: true }).click();
+  await expect(page.getByRole("status", { name: "BPM analysis" })).toContainText("BPM estimates", { timeout: 20000 });
+  await page.getByRole("button", { name: "Close library", exact: true }).click();
   await page.locator("#play-btn-A").click();
   await page.waitForTimeout(1800);
   await page.screenshot({ path: "test-results/waveform-stereo-detail.png", fullPage: true });

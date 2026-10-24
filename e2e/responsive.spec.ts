@@ -8,9 +8,10 @@ for (const size of [
   test("console layout and reachable controls " + size.width + "x" + size.height, async ({ page }) => {
     await page.setViewportSize(size);
     await page.goto("/");
-    await expect(page.locator(".console-slot:visible")).toHaveCount(size.width >= 1280 ? 3 : 1);
+    const tabbed = size.width < 1024 && size.height > size.width;
+    await expect(page.locator(".console-slot:visible")).toHaveCount(tabbed ? 1 : 3);
     await page.screenshot({ animations: "disabled", path: "test-results/console-" + size.width + "x" + size.height + ".png" });
-    if (size.width < 1280) {
+    if (tabbed) {
       await expect(page.locator("#settings-btn")).toBeInViewport();
       await page.getByRole("tab", { name: "DECK A", exact: true }).focus();
       await page.keyboard.press("ArrowRight");

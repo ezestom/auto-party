@@ -1,7 +1,7 @@
 "use client";
 
 import { AIError, isAIReason, localPlan, parsePlan, parseTracks, type AIStatus, type TrackInfo, type PlanResult } from "./contract";
-export type { TrackInfo, SetlistItem, PlanResult as GeminiSetlistResponse } from "./contract";
+export type { TrackInfo, SetlistItem, PlanResult as AISetlistResponse } from "./contract";
 export { localPlan as generateFallbackSetlist } from "./contract";
 
 async function requestAI(path: "status" | "session" | "test" | "setlist", method = "GET", body?: object, signal?: AbortSignal): Promise<unknown> {
@@ -31,13 +31,13 @@ export async function testAIConnection(): Promise<{ connected: true; model: stri
   if (value?.connected !== true || typeof value.model !== "string" || typeof value.checkedAt !== "string" || !Number.isFinite(Date.parse(value.checkedAt))) throw new AIError("INVALID_PROVIDER_RESPONSE");
   return { connected: true, model: value.model, checkedAt: value.checkedAt };
 }
-export async function generateSetlist(input: TrackInfo[], signal?: AbortSignal): Promise<PlanResult> {
+export async function generateSetlist(input: TrackInfo[], signal?: AbortSignal, blockName = ""): Promise<PlanResult> {
   try {
     const tracks = parseTracks(input);
-    const value = await requestAI("setlist", "POST", { tracks }, signal) as { source?: unknown; model?: unknown } | null;
+    const value = await requestAI("setlist", "POST", { tracks, ...(blockName ? { blockName } : {}) }, signal) as { source?: unknown; model?: unknown } | null;
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
-    if (value?.source !== "gemini") throw new AIError("INVALID_PROVIDER_RESPONSE");
-    return { ...parsePlan(value, tracks), source: "gemini", model: typeof value.model === "string" ? value.model : "Gemini" };
+    if (value?.source !== "groq") throw new AIError("INVALID_PROVIDER_RESPONSE");
+    return { ...parsePlan(value, tracks), source: "groq", model: typeof value.model === "string" ? value.model : "Groq" };
   } catch (error) {
     if (signal?.aborted) throw error;
     return localPlan(input, error instanceof AIError ? error.code : "INVALID_PROVIDER_RESPONSE");

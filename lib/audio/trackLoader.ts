@@ -1,3 +1,4 @@
+import { detectMixBoundaries } from "./mixBoundaries";
 import { db } from "../db/dexie";
 import { getAudioEngine } from "./AudioEngine";
 import { useDeckStore, type TrackMetadata } from "../../stores/deckStore";
@@ -7,7 +8,7 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { analyzeWaveform } from "./waveformAnalysis";
 
 type DeckId = "A" | "B";
-interface LoadOptions { signal?: AbortSignal; autoPlay?: boolean }
+interface LoadOptions { signal?: AbortSignal; autoPlay?: boolean; restoreLoop?: boolean }
 const revisions: Record<DeckId, number> = { A: 0, B: 0 };
 
 export function isDeckLocked(deckId: DeckId): boolean {
@@ -38,10 +39,12 @@ async function performLoad(trackId: string, deckId: DeckId, force: boolean, opti
     ]);
     if (!current() || (!force && isDeckLocked(deckId))) return null;
     if (!Number.isFinite(audioBuffer.duration) || audioBuffer.duration <= 0) throw new Error("La canción no contiene audio válido.");
+    const boundaries = detectMixBoundaries(audioBuffer);
     const metadata: TrackMetadata = {
       id: dbTrack.id, title: dbTrack.title, artist: dbTrack.artist, bpm: dbTrack.bpm,
-      key: dbTrack.key, duration: audioBuffer.duration, color: dbTrack.color, ...waveform,
+      key: dbTrack.key, duration: audioBuffer.duration, color: dbTrack.color, ...waveform, ...boundaries,
     };
+    void db.tracks.update(trackId, { ...boundaries }).catch(() => {});
     engine.loadTrack(deckId, audioBuffer);
     useDeckStore.getState().setTrack(deckId, metadata);
     if (!hasDetail && waveform.detailPeaks.length) {
@@ -54,7 +57,7 @@ async function performLoad(trackId: string, deckId: DeckId, force: boolean, opti
       }
     }
     const loop = savedLoops.find(l => Number.isFinite(l.time) && l.time >= 0 && l.time < audioBuffer.duration && Number.isFinite(l.length) && l.length > 0);
-    if (loop) useDeckStore.setState(state => ({ decks: { ...state.decks, [deckId]: {
+    if (loop && options.restoreLoop !== false) useDeckStore.setState(state => ({ decks: { ...state.decks, [deckId]: {
       ...state.decks[deckId], loopActive: true, loopStart: loop.time, loopLength: loop.length,
     } } }));
     if (useSettingsStore.getState().autoGainEnabled) {

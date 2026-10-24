@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useDeckStore, TrackMetadata } from "../../stores/deckStore";
+import { useAIDJStore } from "../../stores/aiDJStore";
 import { useLibraryStore } from "../../stores/libraryStore";
 import { loadTrackById } from "../../lib/audio/trackLoader";
 import { Music, Check, Loader2, Lock, Trash2 } from "lucide-react";
@@ -15,6 +16,9 @@ export default function LibraryRow({ track, index }: LibraryRowProps) {
   const deckA = useDeckStore((state) => state.decks.A);
   const deckB = useDeckStore((state) => state.decks.B);
   const { deleteTrack } = useLibraryStore();
+  const ai = useAIDJStore();
+  const queueBusy = ["analyzing", "transitioning"].includes(ai.status);
+  const isCurrent = ai.setlist[ai.currentIndex]?.trackId === track.id;
 
   const [confirmA, setConfirmA] = useState(false);
   const [confirmB, setConfirmB] = useState(false);
@@ -132,13 +136,14 @@ export default function LibraryRow({ track, index }: LibraryRowProps) {
 
   return (
     <div
+      data-ai-track={track.id}
       draggable
       onDragStart={(e) => {
         e.dataTransfer.setData("application/json", JSON.stringify(track));
         e.dataTransfer.setData("text/plain", track.id);
         e.dataTransfer.effectAllowed = "copy";
       }}
-      className="grid grid-cols-12 gap-2 items-center py-1 px-3 hover:bg-[#161622] transition-colors duration-100 border-b border-[#1b1b28] text-xs select-none min-h-[34px] cursor-grab active:cursor-grabbing group"
+      className="library-song-row grid grid-cols-12 gap-2 items-center py-1 px-3 hover:bg-[#161622] transition-colors duration-100 border-b border-[#1b1b28] text-xs select-none min-h-[34px] cursor-grab active:cursor-grabbing group"
     >
       {/* # and Artwork */}
       <div className="col-span-1 flex items-center gap-2">
@@ -161,6 +166,7 @@ export default function LibraryRow({ track, index }: LibraryRowProps) {
         <div className="font-display font-bold text-white text-[12px] truncate leading-tight">
           {track.title}
         </div>
+        {ai.isActive && <div className="library-queue-actions"><button aria-label={"Play next: " + track.title} disabled={queueBusy || isCurrent} onClick={event => { event.stopPropagation(); ai.queueTrack(track.id); }}>Play next</button><button aria-label={"Add to queue: " + track.title} disabled={queueBusy || isCurrent} onClick={event => { event.stopPropagation(); ai.queueTrack(track.id, false); }}>{ai.requestedIds.includes(track.id) ? "Requested ✓" : "Add to queue"}</button></div>}
       </div>
 
       {/* Artist */}

@@ -2,7 +2,7 @@ import { beforeEach, expect, test, vi } from "vitest";
 import { useAIConnectionStore } from "./aiConnectionStore";
 import { AIError } from "../lib/ai/contract";
 const mock = vi.hoisted(() => ({ status: vi.fn(), unlock: vi.fn(), test: vi.fn(), logout: vi.fn() }));
-vi.mock("../lib/ai/geminiClient", () => ({ getAIStatus: mock.status, unlockAI: mock.unlock, testAIConnection: mock.test, logoutAI: mock.logout }));
+vi.mock("../lib/ai/aiClient", () => ({ getAIStatus: mock.status, unlockAI: mock.unlock, testAIConnection: mock.test, logoutAI: mock.logout }));
 beforeEach(() => {
   vi.resetAllMocks();
   useAIConnectionStore.setState({ status: "unknown", configured: false, authorized: false, checkedAt: null, message: "", useRemoteAI: true });

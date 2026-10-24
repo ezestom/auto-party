@@ -287,7 +287,7 @@ export default function Waveform({ deckId, color, isLibraryOpen = true }: Wavefo
             zCtx.fillStyle = "#8888a0";
             zCtx.font = Math.round(11 * dpr) + "px monospace";
             zCtx.textAlign = "center";
-            zCtx.fillText("Cargá una canción", zW / 2, zH / 2 + 4 * dpr);
+            zCtx.fillText("Load a track", zW / 2, zH / 2 + 4 * dpr);
           }
 
           // Render full track overview peaks

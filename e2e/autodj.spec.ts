@@ -4,6 +4,7 @@ test("local Auto-DJ starts from the playing song and stopping it leaves playback
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.route("https://generativelanguage.googleapis.com/**", route => route.abort());
   await page.goto("/");
+  await page.locator("#library-toggle-btn").click();
   await expect(page.locator("#library-bottom-panel")).toBeVisible();
   // Fresh isolated browser context; this never touches the user's music database.
   await page.evaluate(async () => {
@@ -31,15 +32,17 @@ test("local Auto-DJ starts from the playing song and stopping it leaves playback
     });
   });
   await page.reload();
+  await page.locator("#library-toggle-btn").click();
   await page.getByTitle("Load to Deck A", { exact: true }).first().click();
   await expect(page.locator("#play-btn-A")).toBeEnabled();
   // Loading is async; wait for the title to appear in both library and loaded deck.
   await expect(page.locator("main").getByText("safety-one", { exact: true }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Close library", exact: true }).click();
   await page.locator("#play-btn-A").click();
   await expect(page.locator("#play-btn-A")).toContainText("PAUSE");
   await page.locator("#settings-btn").click();
-  await page.getByRole("button", { name: "AI Auto-DJ", exact: true }).click();
-  await page.getByRole("button", { name: "Ver conexión IA", exact: true }).click();
+  await page.getByRole("tab", { name: "Auto-DJ", exact: true }).click();
+  await page.getByRole("button", { name: "View AI connection", exact: true }).click();
   await page.getByRole("button", { name: "Usar automático local", exact: true }).click();
   await page.locator("#ai-autodj-btn").click();
   await expect(page.locator("#ai-autodj-btn")).toContainText("AUTO LOCAL");

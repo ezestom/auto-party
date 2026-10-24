@@ -1,325 +1,485 @@
 "use client";
-import { useSettingsStore } from "./settingsStore";
-
-import { create } from "zustand";
-import {
-  generateSetlist,
-  generateFallbackSetlist,
-  type TrackInfo,
-  type SetlistItem,
-} from "../lib/ai/geminiClient";
-import { useLibraryStore } from "./libraryStore";
-import { useDeckStore } from "./deckStore";
-import { useMixerStore } from "./mixerStore";
-import { useVJStore } from "./vjStore";
-import { loadTrackById } from "../lib/audio/trackLoader";
-import { getAudioEngine } from "../lib/audio/AudioEngine";
-import { samplerEngine } from "../lib/audio/SamplerEngine";
-import { useAIConnectionStore } from "./aiConnectionStore";
-import type { AIReason } from "../lib/ai/contract";
-
-export type AIDJStatus =
-  | "idle"
-  | "analyzing"
-  | "mixing"
-  | "transitioning"
-  | "error";
-
+import { create } from 'zustand';
+import { generateSetlist, generateFallbackSetlist, type SetlistItem } from '../lib/ai/aiClient';
+import type { AIReason, PlanResult } from '../lib/ai/contract';
+import { requestTrack } from '../lib/ai/partyQueue';
+import { selectTransitionEffect, isTransitionEffect, type TransitionEffect, type NextTransitionEffect } from '../lib/ai/transitionEffects';
+import { naturalTransition } from '../lib/audio/mixBoundaries';
+import { useSettingsStore } from './settingsStore';
+import { useLibraryStore } from './libraryStore';
+import { useDeckStore, type TrackMetadata } from './deckStore';
+import { useMixerStore } from './mixerStore';
+import { usePartyBlockStore } from './partyBlockStore';
+import { usePartyProgramStore } from './partyProgramStore';
+import { cycleTracks, nextProgramStep } from '../lib/ai/partyProgram';
+import { useAIConnectionStore } from './aiConnectionStore';
+import { useVJStore } from './vjStore';
+import { loadTrackById } from '../lib/audio/trackLoader';
+import { getAudioEngine } from '../lib/audio/AudioEngine';
+import { samplerEngine } from '../lib/audio/SamplerEngine';
+type Deck = 'A' | 'B';
+type PendingTheme = { blockId: string; stepId: string | null; origin: 'manual' | 'program' };
+export type AIDJStatus = 'idle' | 'analyzing' | 'mixing' | 'transitioning' | 'manual' | 'error';
 interface AIDJStore {
-  isActive: boolean;
-  status: AIDJStatus;
-  planSource: "gemini" | "local" | null;
-  planReason: AIReason | null;
-  setlist: SetlistItem[];
-  currentIndex: number;
-  djComment: string;
-  errorMessage: string;
-  autoFXDrops: boolean;
-
-  // Actions
-  toggleAutoFXDrops: () => void;
-  activate: () => Promise<void>;
-  deactivate: () => void;
-  skipToNext: () => void;
+    isActive: boolean;
+    status: AIDJStatus;
+    planSource: 'groq' | 'local' | null;
+    planReason: AIReason | null;
+    setlist: SetlistItem[];
+    currentIndex: number;
+    requestedIds: string[];
+    djComment: string;
+    errorMessage: string;
+    autoFXDrops: boolean;
+    isReplanning: boolean;
+    preparation: { trackId: string; deck: Deck } | null;
+    pendingTheme: PendingTheme | null;
+    programStepId: string | null;
+    programElapsed: number;
+    playAt: number | null;
+    lastPlay: {deck: Deck; trackId: string; at: number} | null;
+    nextEffect: NextTransitionEffect; activeEffect: TransitionEffect;
+    setNextEffect: (effect: NextTransitionEffect) => void; cancelEffect: () => void;
+    toggleAutoFXDrops: () => void;
+    activate: () => Promise<void>;
+    deactivate: () => void;
+    skipToNext: () => void;
+    queueTrack: (id: string, next?: boolean) => boolean;
+    removeQueued: (id: string) => void;
+    suspend: () => void;
+    resume: () => void;
+    applyBlock: (id: string) => Promise<void>;
+    jumpToStep: (id: string) => Promise<void>;
 }
-
-
-// The transition monitor interval reference
-let transitionMonitorId: ReturnType<typeof setInterval> | null = null;
+let monitor: ReturnType<typeof setInterval> | null = null;
 let session: AbortController | null = null;
-let loadingTransition = false;
-
-function getSessionDeck(): "A" | "B" {
-  const state = useAIDJStore.getState();
-  const id = state.setlist[state.currentIndex]?.trackId;
-  const { decks } = useDeckStore.getState();
-  const matchesA = !!id && decks.A.track?.id === id;
-  const matchesB = !!id && decks.B.track?.id === id;
-  if (matchesA !== matchesB) return matchesA ? "A" : "B";
-  return useMixerStore.getState().crossfader <= 0.5 ? "A" : "B";
+let replanning: AbortController | null = null;
+let loadingTransition = false, revision = 0;
+let lastEffectIndex = -3, lastEffectAt = -Infinity;
+let lastProgramClock: number | null = null;
+interface Prepared {
+    id: string;
+    deck: Deck;
+    controller: AbortController;
+    promise: Promise<TrackMetadata | null>;
 }
-
-/**
- * Monitors deck progress and triggers automatic transitions.
- * Runs as a polling interval when AI DJ is active.
- */
-function startTransitionMonitor() {
-  stopTransitionMonitor();
-
-  transitionMonitorId = setInterval(() => {
-    const aiState = useAIDJStore.getState();
-    if (!aiState.isActive || aiState.status === "error" || loadingTransition) return;
-    if (aiState.status === "transitioning") {
-      const mixer = useMixerStore.getState();
-      if (!mixer.isAutoCrossfading) {
-        // Release only a fully faded-out deck. A manually interrupted blend keeps both songs.
-        const current = getSessionDeck();
-        if (current === "A" && mixer.crossfader <= 0.001) useDeckStore.getState().setPlaying("B", false);
-        if (current === "B" && mixer.crossfader >= 0.999) useDeckStore.getState().setPlaying("A", false);
-        useAIDJStore.setState({ status: "mixing" });
-      }
-      return;
-    }
-
-    const { setlist, currentIndex } = aiState;
-    const currentItem = setlist[currentIndex];
-    const deckA = useDeckStore.getState().decks.A;
-    const deckB = useDeckStore.getState().decks.B;
-
-    // Determine which deck is currently "active" (playing and in crossfader focus)
-    const activeDeck = getSessionDeck();
-    const activeDeckState = activeDeck === "A" ? deckA : deckB;
-    const inactiveDeck = activeDeck === "A" ? "B" : "A";
-
-    if (!activeDeckState.track) return;
-    if (currentIndex >= setlist.length - 1) {
-      if (!activeDeckState.isPlaying && getAudioEngine().getPlaybackTime(activeDeck) >= activeDeckState.track.duration - 0.1) aiState.deactivate();
-      return;
-    }
-    if (!activeDeckState.isPlaying) return;
-
-    const timeRemaining =
-      activeDeckState.track.duration - getAudioEngine().getPlaybackTime(activeDeck);
-    const requestedMixPoint = currentItem?.mixPoint;
-    const mixPoint = Math.min(activeDeckState.track.duration / 2, Number.isFinite(requestedMixPoint) && requestedMixPoint > 0 ? requestedMixPoint : 24);
-
-    // AI Pre-Drop Build Riser: trigger noise sweep 2.5s before transition starts
-    if (aiState.autoFXDrops && timeRemaining <= mixPoint + 2.5 && timeRemaining > mixPoint + 1.5) {
-      samplerEngine.trigger("sweep", 0.55);
-    }
-
-    // Trigger transition when we reach the mix point
-    if (timeRemaining <= mixPoint) {
-      triggerAITransition(inactiveDeck, currentItem.transitionStyle);
-    }
-  }, 500); // Check every 500ms
+let prepared: Prepared | null = null;
+const catalog = () => useLibraryStore.getState().allTracks || useLibraryStore.getState().tracks;
+const itemFor = (trackId: string): SetlistItem => ({ trackId, mixPoint: 4, transitionStyle: 'smooth' });
+function cancelPreparation() {
+    prepared?.controller.abort(); prepared = null;
+    useAIDJStore.setState({ preparation: null, playAt: null });
 }
-
-function stopTransitionMonitor() {
-  if (transitionMonitorId) {
-    clearInterval(transitionMonitorId);
-    transitionMonitorId = null;
-  }
+function currentDeck(): Deck {
+    const ai = useAIDJStore.getState(), decks = useDeckStore.getState().decks, id = ai.setlist[ai.currentIndex]?.trackId;
+    if (id && (decks.A.track?.id === id) !== (decks.B.track?.id === id))
+        return decks.A.track?.id === id ? 'A' : 'B';
+    return useMixerStore.getState().crossfader <= 0.5 ? 'A' : 'B';
 }
-
-/**
- * Loads and starts the next song, then triggers the existing crossfade.
- */
-async function triggerAITransition(
-  targetDeck: "A" | "B",
-  style: string
-) {
-  const aiState = useAIDJStore.getState();
-  const activeSession = session;
-  if (!aiState.isActive || !activeSession || activeSession.signal.aborted || loadingTransition || useMixerStore.getState().isAutoCrossfading) return;
-  const nextIndex = aiState.currentIndex + 1;
-
-  if (nextIndex >= aiState.setlist.length) {
-    useAIDJStore.getState().deactivate();
-    return;
-  }
-
-  loadingTransition = true;
-  useAIDJStore.setState({ status: "transitioning" });
-
-  const nextItem = aiState.setlist[nextIndex];
-
-  try {
-    // 1. Load the next track onto the target deck
-    const loaded = await loadTrackById(nextItem.trackId, targetDeck, false, { signal: activeSession.signal, autoPlay: false });
-    if (session !== activeSession || activeSession.signal.aborted) return;
-    if (!loaded) throw new Error("El deck de destino está ocupado o la carga fue reemplazada.");
-
-    // 2. Start playback on the target deck
-    useDeckStore.getState().setPlaying(targetDeck, true);
-
-    // 3. Set auto-crossfade duration based on transition style
-    const crossfadeDuration = style === "cut" ? 2 : useSettingsStore.getState().aiDefaultDuration;
-
-    useMixerStore.getState().setAutoDuration(crossfadeDuration);
-
-    // 4. Trigger auto-crossfade to the target deck
-    useMixerStore.getState().triggerAutoCrossfade(targetDeck);
-
-    // 5. Synchronize VJ Visual Display (rotate to next uploaded video & trigger visual drop)
+function eligibleTracks(id = usePartyBlockStore.getState().activeId) {
+    const { blocks } = usePartyBlockStore.getState(), block = blocks.find(b => b.id === id);
+    const tracks = catalog();
+    return { tracks: block ? tracks.filter(track => block.trackIds.includes(track.id)) : id ? [] : tracks, name: block?.name || '' };
+}
+async function installThemeQueue(id: string, destination: PendingTheme | null) {
+    const ai = useAIDJStore.getState();
+    if (['analyzing', 'transitioning'].includes(ai.status)) return;
+    const eligible = eligibleTracks(id);
+    if (!eligible.tracks.length) {
+        useAIDJStore.setState({errorMessage:'This theme has no available songs. Add music before playing it.'}); return;
+    }
+    if (!ai.isActive) { usePartyBlockStore.getState().setActive(id); return; }
+    const history = ai.setlist.slice(0, ai.currentIndex + 1);
+    const pinned = ai.setlist.slice(ai.currentIndex + 1).filter(item => ai.requestedIds.includes(item.trackId));
+    const candidates = cycleTracks(eligible.tracks, history.map(item=>item.trackId), history.at(-1)?.trackId || '')
+        .filter(track=>!pinned.some(item=>item.trackId===track.id));
+    const allowed = new Set(candidates.map(track=>track.id));
+    const local = generateFallbackSetlist(candidates);
+    cancelPreparation(); replanning?.abort();
+    const controller = new AbortController(); replanning = controller;
+    const version = ++revision;
+    useAIDJStore.setState({setlist:[...history,...pinned,...local.setlist.filter(item=>allowed.has(item.trackId))],
+        pendingTheme:destination, planSource:'local',planReason:'LOCAL_SELECTED',
+        isReplanning:candidates.length>=2 && useAIConnectionStore.getState().useRemoteAI,errorMessage:''});
     try {
-      const vjState = useVJStore.getState();
-      vjState.rotateToNextVideo();
-      vjState.triggerDropFlash(
-        `🔥 DECK ${targetDeck} DROPPING 🔥`,
-        targetDeck === "A" ? "#ff6b00" : "#00d4ff"
-      );
-    } catch (e) {
-      console.warn("[AI DJ] VJ sync notice:", e);
+        if (candidates.length<2 || !useAIConnectionStore.getState().useRemoteAI) return;
+        const result = await plan(candidates,controller.signal,eligible.name);
+        if (controller.signal.aborted || revision!==version || useAIDJStore.getState().status==='transitioning') return;
+        cancelPreparation();
+        useAIDJStore.setState({setlist:[...history,...pinned,...result.setlist.filter(item=>allowed.has(item.trackId))],planSource:result.source,planReason:result.reason||null,djComment:result.djComment});
+        useAIConnectionStore.getState().recordPlan(result);
+    } catch(error) {
+        if (!controller.signal.aborted && revision===version) useAIDJStore.setState({errorMessage:error instanceof Error?error.message:'Local ordering is active.'});
+    } finally {
+        if (replanning===controller) useAIDJStore.setState({isReplanning:false});
     }
-
-    // 6. Trigger AI Drop Stinger / Impact if enabled
-    if (aiState.autoFXDrops) {
-      if (style === "cut") {
-        samplerEngine.trigger("laser", 0.7);
-      } else {
-        samplerEngine.trigger("subdrop", 0.65);
-      }
-    }
-
-    // 7. Update AI state
-    useAIDJStore.setState({
-      currentIndex: nextIndex,
-      status: "transitioning",
-    });
-  } catch (err) {
-    if (session !== activeSession || activeSession.signal.aborted) return;
-    console.error("[AI DJ] Transition error:", err);
-    useAIDJStore.setState({
-      status: "error",
-      errorMessage: `Failed to load next track: ${err}`,
-    });
-  } finally {
-    if (session === activeSession) loadingTransition = false;
-  }
 }
-
+async function plan(tracks: TrackMetadata[], signal: AbortSignal, blockName: string): Promise<PlanResult> {
+    const metadata = tracks.map(({ id, title, artist, bpm, key, duration }) => ({ id, title, artist, bpm, key, duration }));
+    return tracks.length >= 2 && useAIConnectionStore.getState().useRemoteAI
+        ? generateSetlist(metadata, signal, blockName) : generateFallbackSetlist(metadata);
+}
+function prepareNext(deck: Deck): Prepared | null {
+    const ai = useAIDJStore.getState(), next = ai.setlist[ai.currentIndex + 1];
+    if (!session || !next)
+        return null;
+    if (prepared?.id === next.trackId && prepared.deck === deck)
+        return prepared;
+    cancelPreparation();
+    const controller = new AbortController(), activeSession = session;
+    // Deferring the loader ensures the reservation exists before any synchronous store update.
+    const entry: Prepared = { id: next.trackId, deck, controller, promise: Promise.resolve(null) };
+    prepared = entry;
+    useAIDJStore.setState({ preparation: { trackId: next.trackId, deck } });
+    entry.promise = Promise.resolve().then(() => loadTrackById(next.trackId, deck, false, { signal: AbortSignal.any([activeSession.signal, controller.signal]), autoPlay: false, restoreLoop: false })).catch(error => {
+        if (!controller.signal.aborted && session === activeSession)
+            useAIDJStore.setState({ status: 'error', errorMessage: error instanceof Error ? error.message : 'Unable to prepare the next song.' });
+        return null;
+    });
+    return entry;
+}
+function transitionPolicy(outgoing: TrackMetadata, incoming: TrackMetadata) {
+    const ai = useAIDJStore.getState();
+    const base = naturalTransition(outgoing, incoming, useSettingsStore.getState().aiDefaultDuration);
+    const automatic = ai.nextEffect === 'auto';
+    const requested = automatic ? (ai.planSource === 'groq' ? ai.setlist[ai.currentIndex]?.effect || 'none' : 'none') : ai.nextEffect;
+    const effect = selectTransitionEffect(requested, { duration: base.duration, bpm: outgoing.bpm, incomingBpm: incoming.bpm, automatic, index: ai.currentIndex, lastIndex: lastEffectIndex, now: getAudioEngine().ctx?.currentTime || 0, lastAt: lastEffectAt });
+    const duration = effect === 'echo_out' ? Math.min(2, base.duration) : base.duration;
+    return { ...base, duration, startsAt: Math.max(0, base.end - duration), effect };
+}
+async function transition(deck: Deck) {
+    const ai = useAIDJStore.getState(), activeSession = session;
+    if (!ai.isActive || !activeSession || activeSession.signal.aborted || loadingTransition || !['mixing'].includes(ai.status) || useMixerStore.getState().isAutoCrossfading)
+        return;
+    const next = ai.setlist[ai.currentIndex + 1];
+    if (!next)
+        return;
+    const fader = useMixerStore.getState().crossfader;
+    if ((deck === 'B' && fader > .001) || (deck === 'A' && fader < .999)) {
+        ai.suspend();
+        useAIDJStore.setState({ errorMessage: 'Finish the manual blend by moving the crossfader fully to the current song, then resume Auto-DJ.' });
+        return;
+    }
+    loadingTransition = true;
+    useAIDJStore.setState({ status: 'transitioning' });
+    const entry = prepareNext(deck);
+    try {
+        const loaded = await entry?.promise;
+        if (session !== activeSession || activeSession.signal.aborted || prepared !== entry || entry?.controller.signal.aborted)
+            return;
+        if (!loaded)
+            throw new Error('The next song could not be prepared. Current playback was preserved.');
+        if (ai.pendingTheme?.blockId && !eligibleTracks(ai.pendingTheme.blockId).tracks.length)
+            throw new Error('The next theme is no longer available. Choose another theme; current playback continues.');
+        const outgoingDeck = currentDeck();
+        const outgoing = useDeckStore.getState().decks[outgoingDeck].track;
+        const policy = transitionPolicy(outgoing || loaded, loaded);
+        if (loaded.audioStart)
+            useDeckStore.getState().setCurrentTime(deck, loaded.audioStart);
+        useDeckStore.getState().setPlaying(deck, true);
+        if (ai.pendingTheme) {
+            usePartyBlockStore.getState().setActive(ai.pendingTheme.blockId);
+            lastProgramClock = getAudioEngine().ctx?.currentTime ?? null;
+            const program=usePartyProgramStore.getState();
+            const step=program.enabled?program.steps.find(step=>step.id===ai.pendingTheme?.stepId):null;
+            useAIDJStore.setState({programStepId:step?.id||null,programElapsed:0,pendingTheme:null});
+        }
+        useAIDJStore.setState({lastPlay:{deck,trackId:loaded.id,at:performance.now()}});
+        useMixerStore.getState().setAutoDuration(policy.duration);
+        useMixerStore.getState().triggerAutoCrossfade(deck);
+        const effect = getAudioEngine().startTransitionEffect?.(outgoingDeck, policy.effect, policy.duration, outgoing?.bpm || 0) || "none";
+        if (effect !== "none") { lastEffectIndex = ai.currentIndex; lastEffectAt = getAudioEngine().ctx?.currentTime || 0; }
+        useAIDJStore.setState({ activeEffect: effect, nextEffect: useSettingsStore.getState().aiEffectsEnabled ? "auto" : "none" });
+        revision++;
+        useAIDJStore.setState({ currentIndex: ai.currentIndex + 1, requestedIds: ai.requestedIds.filter(id => id !== next.trackId) });
+        try {
+            const vj = useVJStore.getState();
+            vj.rotateToNextVideo();
+            vj.triggerDropFlash('NOW PLAYING', deck === 'A' ? '#ff6b00' : '#00d4ff');
+            if (ai.autoFXDrops) samplerEngine.trigger(policy.duration <= 2 ? 'laser' : 'subdrop', .5);
+        } catch { /* Optional visuals and effects must not interrupt the audio transition. */ }
+        prepared = null;
+        useAIDJStore.setState({ preparation: null, playAt: null });
+    }
+    catch (error) {
+        if (session === activeSession && !activeSession.signal.aborted)
+            useAIDJStore.setState({ status: 'error', errorMessage: error instanceof Error ? error.message : 'Transition failed.' });
+    }
+    finally {
+        if (session === activeSession)
+            loadingTransition = false;
+    }
+}
+function stopMonitor() { if (monitor)
+    clearInterval(monitor); monitor = null; }
+function startMonitor() {
+    stopMonitor();
+    monitor = setInterval(() => {
+        let ai = useAIDJStore.getState();
+        const clock = getAudioEngine().ctx?.currentTime ?? null;
+        const delta = clock !== null && lastProgramClock !== null ? Math.max(0,clock-lastProgramClock) : 0;
+        lastProgramClock = clock;
+        if (ai.isActive && ai.programStepId && ['mixing','transitioning'].includes(ai.status) &&
+            Object.values(useDeckStore.getState().decks).some(deck=>deck.isPlaying) && delta) {
+            useAIDJStore.setState({programElapsed:ai.programElapsed+delta}); ai=useAIDJStore.getState();
+        }
+        if (ai.activeEffect !== "none" && getAudioEngine().hasTransitionEffects?.() === false) useAIDJStore.setState({ activeEffect: "none" });
+        if (!ai.isActive || loadingTransition || ['manual', 'analyzing', 'error'].includes(ai.status))
+            return;
+        const mixer = useMixerStore.getState(), deck = currentDeck(), state = useDeckStore.getState().decks[deck];
+        if (ai.status === 'transitioning') {
+            if (!mixer.isAutoCrossfading) {
+                if (deck === 'A' && mixer.crossfader <= .001)
+                    useDeckStore.getState().setPlaying('B', false);
+                if (deck === 'B' && mixer.crossfader >= .999)
+                    useDeckStore.getState().setPlaying('A', false);
+                useAIDJStore.setState({ status: 'mixing' });
+            }
+            return;
+        }
+        if (!state.track) {
+            ai.suspend();
+            return;
+        }
+        const time = getAudioEngine().getPlaybackTime(deck);
+        const end = state.track.audioEnd || state.track.duration;
+        const program = usePartyProgramStore.getState(), activeId = usePartyBlockStore.getState().activeId;
+        if (ai.pendingTheme?.origin !== 'manual') {
+            const nextStep = program.enabled && ai.programStepId ? nextProgramStep(program.steps,ai.programStepId,
+                ai.programElapsed+Math.max(0,end-time),id=>eligibleTracks(id).tracks.length>0) : null;
+            if (nextStep && ai.pendingTheme?.stepId!==nextStep.id) {
+                void installThemeQueue(nextStep.blockId,{blockId:nextStep.blockId,stepId:nextStep.id,origin:'program'});
+                if(program.steps.findIndex(step=>step.id===nextStep.id)>program.steps.findIndex(step=>step.id===ai.programStepId)+1)
+                    useAIDJStore.setState({errorMessage:'Skipped unavailable programme themes. Current playback continues.'});
+            } else if (!nextStep && ai.pendingTheme?.origin==='program') {
+                void installThemeQueue(activeId,null);
+            }
+        }
+        ai=useAIDJStore.getState();
+        if (!ai.setlist[ai.currentIndex+1] && activeId && !ai.pendingTheme && eligibleTracks(activeId).tracks.length) {
+            void installThemeQueue(activeId,null); ai=useAIDJStore.getState();
+        }
+        const next = ai.setlist[ai.currentIndex + 1];
+        if (!next) {
+            if (!state.isPlaying && time >= state.track.duration - .1)
+                ai.deactivate();
+            return;
+        }
+        if (!state.isPlaying || state.loopActive)
+            return;
+        const incoming = catalog().find(t => t.id === next.trackId);
+        if (!incoming) {
+            useAIDJStore.setState({ status: 'error', errorMessage: 'The next song is no longer in the library. Choose another song.' });
+            return;
+        }
+        const policy = transitionPolicy(state.track, incoming), target = deck === 'A' ? 'B' : 'A';
+        if (policy.end - time <= Math.max(20, policy.duration + 10)) {
+            prepareNext(target);
+            useAIDJStore.setState({playAt:(clock||0)+Math.max(0,policy.startsAt-time)});
+        }
+        if (time >= policy.startsAt)
+            void transition(target);
+    }, 500);
+}
 export const useAIDJStore = create<AIDJStore>((set, get) => ({
-  isActive: false,
-  status: "idle",
-  planSource: null,
-  planReason: null,
-  setlist: [],
-  currentIndex: 0,
-  djComment: "",
-  errorMessage: "",
-  autoFXDrops: true,
-
-
-  toggleAutoFXDrops: () => set((state) => ({ autoFXDrops: !state.autoFXDrops })),
-
-  activate: async () => {
-    if (get().isActive) return;
-    const libraryTracks = useLibraryStore.getState().tracks;
-
-    if (libraryTracks.length < 2) {
-      set({
-        status: "error",
-        errorMessage: "Import at least 2 tracks to use AI Auto-DJ.",
-      });
-      return;
-    }
-
-    session?.abort();
-    const activeSession = new AbortController();
-    session = activeSession;
-    loadingTransition = false;
-    set({ status: "analyzing", isActive: true, errorMessage: "", planSource: null, planReason: null });
-
-    // Prepare track info for Gemini
-    const trackInfos: TrackInfo[] = libraryTracks.map((t) => ({
-      id: t.id,
-      title: t.title,
-      artist: t.artist,
-      bpm: t.bpm,
-      key: t.key,
-      duration: t.duration,
-    }));
-
-    try {
-      let result;
-
-      if (useAIConnectionStore.getState().useRemoteAI) {
-        result = await generateSetlist(trackInfos, activeSession.signal);
-      } else {
-        // Fallback: sort by BPM
-        result = generateFallbackSetlist(trackInfos);
-      }
-
-      if (session !== activeSession || activeSession.signal.aborted) return;
-      useAIConnectionStore.getState().recordPlan(result);
-      const validIds = new Set(libraryTracks.map(track => track.id));
-      const seen = new Set<string>();
-      let setlist = result.setlist.filter(item => validIds.has(item.trackId) && !seen.has(item.trackId) && !!seen.add(item.trackId));
-      if (!setlist.length) throw new Error("No hay canciones válidas para la sesión.");
-
-      // Take over the currently audible song instead of restarting the party.
-      const { decks } = useDeckStore.getState();
-      const focus = useMixerStore.getState().crossfader <= 0.5 ? "A" : "B";
-      const other = focus === "A" ? "B" : "A";
-      const playing = decks[focus].isPlaying && decks[focus].track ? focus : decks[other].isPlaying && decks[other].track ? other : null;
-      if (playing) {
-        const id = decks[playing].track!.id;
-        const item = setlist.find(entry => entry.trackId === id) || { trackId: id, mixPoint: 24, transitionStyle: "smooth" as const };
-        setlist = [item, ...setlist.filter(entry => entry.trackId !== id)];
-      } else {
-        const loaded = await loadTrackById(setlist[0].trackId, "A", false, { signal: activeSession.signal, autoPlay: false });
-        if (session !== activeSession || activeSession.signal.aborted) return;
-        if (!loaded) throw new Error("El deck está ocupado o la carga fue reemplazada.");
-        useMixerStore.getState().setCrossfader(0);
-        useDeckStore.getState().setPlaying("A", true);
-      }
-      set({ setlist, djComment: result.djComment, currentIndex: 0, status: "mixing", planSource: result.source, planReason: result.reason || null });
-
-      // Start monitoring for transitions
-      startTransitionMonitor();
-    } catch (err) {
-      if (session !== activeSession || activeSession.signal.aborted) return;
-      const errorMsg =
-        err instanceof Error ? err.message : "Unknown error occurred";
-      console.error("[AI DJ] Activation error:", err);
-      set({
-        status: "error",
-        isActive: false,
-        errorMessage: errorMsg,
-      });
-    }
-  },
-
-  deactivate: () => {
-    session?.abort();
-    session = null;
-    loadingTransition = false;
-    stopTransitionMonitor();
-    useMixerStore.getState().stopAutoCrossfade();
-    set({
-      isActive: false,
-      status: "idle",
-      setlist: [],
-      currentIndex: 0,
-      djComment: "",
-      planSource: null,
-      planReason: null,
-      errorMessage: "",
-    });
-  },
-
-  skipToNext: () => {
-    const { isActive, setlist, currentIndex } = get();
-    if (!isActive || currentIndex >= setlist.length - 1) return;
-
-    const activeDeck = getSessionDeck();
-    const inactiveDeck = activeDeck === "A" ? "B" : "A";
-    const currentItem = setlist[currentIndex];
-
-    triggerAITransition(
-      inactiveDeck,
-      currentItem?.transitionStyle || "smooth"
-    );
-  },
+    isActive: false, status: 'idle', planSource: null, planReason: null, setlist: [], currentIndex: 0, requestedIds: [], djComment: '', errorMessage: '', autoFXDrops: false, isReplanning: false, preparation: null,
+    pendingTheme:null,programStepId:null,programElapsed:0,playAt:null,lastPlay:null,
+    toggleAutoFXDrops: () => set(s => ({ autoFXDrops: !s.autoFXDrops })),
+    nextEffect: useSettingsStore.getState().aiEffectsEnabled ? 'auto' : 'none', activeEffect: 'none',
+    setNextEffect: effect => { if (effect === 'auto' || isTransitionEffect(effect)) { if (effect === 'none' || effect === 'auto') useSettingsStore.getState().setAiEffectsEnabled(effect === 'auto'); if (effect === 'none') get().cancelEffect(); set({ nextEffect: effect }); } },
+    cancelEffect: () => { getAudioEngine().cancelTransitionEffects?.(); set({ activeEffect: 'none', nextEffect: useSettingsStore.getState().aiEffectsEnabled ? "auto" : "none" }); },
+    activate: async () => {
+        if (get().isActive)
+            return;
+        const program = usePartyProgramStore.getState();
+        const first = program.enabled ? program.steps[0] : null;
+        const previousTheme=usePartyBlockStore.getState().activeId;
+        if (program.enabled && (!first || program.steps.some(step=>!eligibleTracks(step.blockId).tracks.length))) {
+            set({status:'error',errorMessage:'Add songs to every programme theme, or disable the programme before starting.'});return;
+        }
+        if (first) usePartyBlockStore.getState().setActive(first.blockId);
+        const eligible = eligibleTracks();
+        if (!eligible.tracks.length) {
+            set({ status: 'error', errorMessage: 'Add songs to the selected block before starting.' });
+            return;
+        }
+        session?.abort();
+        lastEffectIndex = -3; lastEffectAt = -Infinity;
+        const activeSession = new AbortController();
+        session = activeSession;
+        loadingTransition = false;
+        lastProgramClock = null;
+        revision++;
+        set({ isActive: true, status: 'analyzing', errorMessage: '', planSource: null, planReason: null, requestedIds: [],pendingTheme:null,programStepId:first?.id||null,programElapsed:0,lastPlay:null });
+        try {
+            const result = await plan(eligible.tracks, activeSession.signal, eligible.name);
+            if (session !== activeSession || activeSession.signal.aborted)
+                return;
+            useAIConnectionStore.getState().recordPlan(result);
+            const valid = new Set(eligible.tracks.map(t => t.id)), seen = new Set<string>();
+            let queue = result.setlist.filter(item => valid.has(item.trackId) && !seen.has(item.trackId) && !!seen.add(item.trackId));
+            if (!queue.length)
+                throw new Error('No eligible songs are available.');
+            const decks = useDeckStore.getState().decks, focus = useMixerStore.getState().crossfader <= .5 ? 'A' : 'B', other = focus === 'A' ? 'B' : 'A';
+            const playing = decks[focus].isPlaying && decks[focus].track ? focus : decks[other].isPlaying && decks[other].track ? other : null;
+            let initialTheme: PendingTheme | null = null;
+            if (playing) {
+                const id = decks[playing].track!.id;
+                queue = [queue.find(item => item.trackId === id) || itemFor(id), ...queue.filter(item => item.trackId !== id)];
+                if(first&&!eligible.tracks.some(track=>track.id===id)) {
+                    usePartyBlockStore.getState().setActive(previousTheme);
+                    initialTheme={blockId:first.blockId,stepId:first.id,origin:'manual'};
+                }
+            }
+            else {
+                const loaded = await loadTrackById(queue[0].trackId, 'A', false, { signal: activeSession.signal, autoPlay: false, restoreLoop: false });
+                if (session !== activeSession || activeSession.signal.aborted)
+                    return;
+                if (!loaded)
+                    throw new Error('Deck A is busy.');
+                if (loaded.audioStart)
+                    useDeckStore.getState().setCurrentTime('A', loaded.audioStart);
+                useMixerStore.getState().setCrossfader(0);
+                useDeckStore.getState().setPlaying('A', true);
+                set({lastPlay:{deck:'A',trackId:loaded.id,at:performance.now()}});
+            }
+            set({ setlist: queue, currentIndex: 0, status: 'mixing', djComment: result.djComment, planSource: result.source, planReason: result.reason || null,
+                pendingTheme:initialTheme,programStepId:initialTheme?null:first?.id||null });
+            startMonitor();
+        }
+        catch (error) {
+            if (session === activeSession && !activeSession.signal.aborted)
+                set({ isActive: false, status: 'error', errorMessage: error instanceof Error ? error.message : 'Unable to start Auto-DJ.' });
+        }
+    },
+    deactivate: () => {
+        get().cancelEffect();
+        session?.abort();
+        session = null;
+        replanning?.abort();
+        cancelPreparation();
+        loadingTransition = false;
+        revision++;
+        stopMonitor();
+        lastProgramClock = null;
+        set({ isActive: false, status: 'idle', setlist: [], currentIndex: 0, requestedIds: [], planSource: null, planReason: null, djComment: '', errorMessage: '', isReplanning: false,pendingTheme:null,programStepId:null,programElapsed:0,lastPlay:null });
+        useMixerStore.getState().stopAutoCrossfade();
+    },
+    skipToNext: () => { const deck = currentDeck(); void transition(deck === 'A' ? 'B' : 'A'); },
+    queueTrack: (id, next = true) => {
+        const ai = get();
+        if (!ai.isActive || ['analyzing', 'transitioning'].includes(ai.status) || !catalog().some(t => t.id === id))
+            return false;
+        const queue = requestTrack(ai.setlist, ai.currentIndex, itemFor(id), next);
+        if (queue === ai.setlist)
+            return false;
+        revision++;
+        replanning?.abort();
+        cancelPreparation();
+        set({ setlist: queue, requestedIds: [...new Set([...ai.requestedIds, id])], errorMessage: '', isReplanning: false });
+        return true;
+    },
+    removeQueued: id => {
+        const ai = get();
+        if (['analyzing', 'transitioning'].includes(ai.status))
+            return;
+        revision++;
+        replanning?.abort();
+        cancelPreparation();
+        set({ setlist: [...ai.setlist.slice(0, ai.currentIndex + 1), ...ai.setlist.slice(ai.currentIndex + 1).filter(item => item.trackId !== id)], requestedIds: ai.requestedIds.filter(value => value !== id), isReplanning: false });
+    },
+    suspend: () => {
+        get().cancelEffect();
+        if (!get().isActive || get().status === 'analyzing')
+            return;
+        revision++;
+        replanning?.abort();
+        cancelPreparation();
+        set({ status: 'manual', isReplanning: false });
+        useMixerStore.getState().stopAutoCrossfade();
+    },
+    resume: () => {
+        if (!get().isActive || !['manual', 'error'].includes(get().status))
+            return;
+        const decks = useDeckStore.getState().decks, focus = useMixerStore.getState().crossfader <= .5 ? 'A' : 'B', other = focus === 'A' ? 'B' : 'A';
+        const active = decks[focus].isPlaying && decks[focus].track ? decks[focus] : decks[other].isPlaying ? decks[other] : null;
+        if (!active?.track) {
+            set({ errorMessage: 'Start a deck before resuming Auto-DJ.' });
+            return;
+        }
+        const selected = active === decks.A ? 'A' : 'B', fader = useMixerStore.getState().crossfader;
+        if ((selected === 'A' && fader > .001) || (selected === 'B' && fader < .999)) {
+            set({ errorMessage: 'Move the crossfader fully to the song you want to keep, then resume Auto-DJ.' });
+            return;
+        }
+        useDeckStore.getState().setPlaying(selected === 'A' ? 'B' : 'A', false);
+        const ai = get(), id = active.track.id;
+        set({ setlist: [...ai.setlist.slice(0, ai.currentIndex), itemFor(id), ...ai.setlist.slice(ai.currentIndex).filter(item => item.trackId !== id)], requestedIds: ai.requestedIds.filter(value => value !== id), status: 'mixing', errorMessage: '' });
+    },
+    applyBlock: async id => {
+        const program=usePartyProgramStore.getState();
+        const step=program.enabled?program.steps.find(step=>step.blockId===id):null;
+        await installThemeQueue(id,{blockId:id,stepId:step?.id||null,origin:'manual'});
+    },
+    jumpToStep: async id => {
+        const step=usePartyProgramStore.getState().steps.find(step=>step.id===id);
+        if(step) await installThemeQueue(step.blockId,{blockId:step.blockId,stepId:step.id,origin:'manual'});
+    },
 }));
+// Manual controls have priority over the automation's scheduled moves.
+useMixerStore.subscribe((state, previous) => {
+    const ai = useAIDJStore.getState();
+    if (!ai.isActive || ['analyzing', 'manual', 'error'].includes(ai.status))
+        return;
+    const movedManually = state.crossfader !== previous.crossfader && !state.isAutoCrossfading && !previous.isAutoCrossfading;
+    const interrupted = previous.isAutoCrossfading && !state.isAutoCrossfading && state.crossfader > .001 && state.crossfader < .999;
+    if (movedManually || interrupted)
+        ai.suspend();
+});
+useDeckStore.subscribe((state, previous) => {
+    const ai = useAIDJStore.getState();
+    if (!ai.isActive || ['analyzing', 'manual', 'error'].includes(ai.status))
+        return;
+    for (const id of ['A', 'B'] as const) {
+        const now = state.decks[id], before = previous.decks[id];
+        if (now.track !== before.track && prepared?.deck === id && prepared.id === now.track?.id)
+            continue;
+        if (now.track?.id !== before.track?.id && !(prepared?.deck === id && prepared.id === now.track?.id)) {
+            ai.suspend();
+            return;
+        }
+        const ownPreparation = loadingTransition && prepared?.deck === id;
+        if ((now.seekRevision !== before.seekRevision || now.tempoOffset !== before.tempoOffset || now.loopActive !== before.loopActive || now.loopLength !== before.loopLength || now.loopStart !== before.loopStart) && !ownPreparation) {
+            ai.suspend();
+            return;
+        }
+        const mixer = useMixerStore.getState();
+        const ownStart = ownPreparation && now.isPlaying;
+        const ownRelease = ai.status === 'transitioning' && !mixer.isAutoCrossfading && id !== currentDeck() && (id === 'A' ? mixer.crossfader >= .999 : mixer.crossfader <= .001);
+        if (now.isPlaying !== before.isPlaying && !ownStart && !ownRelease && !(now.currentTime >= (now.track?.duration || Infinity) - .1)) {
+            ai.suspend();
+            return;
+        }
+    }
+});
+
+useSettingsStore.subscribe((state,previous)=>{if(state.aiEffectsEnabled!==previous.aiEffectsEnabled){if(!state.aiEffectsEnabled)useAIDJStore.getState().cancelEffect();useAIDJStore.setState({nextEffect:state.aiEffectsEnabled?"auto":"none"});}});
+
+usePartyBlockStore.subscribe((state,previous)=>{
+    const ai=useAIDJStore.getState();
+    if (!ai.isActive) return;
+    const removed=previous.activeId && !state.blocks.some(block=>block.id===previous.activeId);
+    const pendingRemoved=ai.pendingTheme?.blockId && !state.blocks.some(block=>block.id===ai.pendingTheme?.blockId);
+    if (removed || pendingRemoved) {
+        ai.suspend();
+        useAIDJStore.setState({pendingTheme:null,programStepId:null,errorMessage:'A selected theme was removed. Current playback continues; choose another theme to resume.'});
+    }
+});
+usePartyProgramStore.subscribe((state,previous)=>{
+    if (state.enabled===previous.enabled && state.steps===previous.steps) return;
+    const ai=useAIDJStore.getState();
+    if (ai.programStepId && (!state.enabled || !state.steps.some(step=>step.id===ai.programStepId)))
+        useAIDJStore.setState({programStepId:null});
+    if(ai.pendingTheme?.stepId&&!state.steps.some(step=>step.id===ai.pendingTheme?.stepId))
+        useAIDJStore.setState({pendingTheme:{...ai.pendingTheme,stepId:null}});
+});

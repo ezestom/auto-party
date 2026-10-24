@@ -32,3 +32,10 @@ test("local fallback is explicit and never mutates the library", () => {
   expect(result.reason).toBe("PROVIDER_AUTH");
   expect(result.setlist.map(item => item.trackId)).toEqual(["a", "b"]);
 });
+
+test('only implemented effect identifiers survive plan validation; raw parameters are stripped',()=>{
+ const valid={trackId:'a',mixPoint:4,transitionStyle:'smooth',effect:'echo_out',feedback:99};
+ const plan=parsePlan({setlist:[valid],djComment:'Exit'},tracks);
+ expect(plan.setlist[0].effect).toBe('echo_out');expect(plan.setlist[0]).not.toHaveProperty('feedback');
+ for(const effect of ['spinback','execute',{},null]) expect(()=>parsePlan({setlist:[{...valid,effect}],djComment:'Bad'},tracks)).toThrow();
+});
