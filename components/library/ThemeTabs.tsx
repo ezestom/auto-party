@@ -19,11 +19,11 @@ export default function ThemeTabs() {
       if(next>=0){event.preventDefault();tabs[next].click();tabs[next].focus();tabs[next].scrollIntoView({block:'nearest',inline:'nearest'});}
     }}>
       {[{id:'',name:'All music'},...blocks].map(block=><button key={block.id} id={'theme-tab-'+(block.id||'all')} role="tab" aria-selected={block.id===browsingId} aria-controls="theme-song-list" tabIndex={block.id===browsingId?0:-1} onClick={()=>setBrowsing(block.id)}>{block.name}</button>)}
+      <button className="theme-add" aria-label="Create theme" title="Create theme" onClick={()=>setEditing('')} disabled={blocks.length>=64}>+</button>
     </div>
     <div className="theme-tab-actions">
-      <button onClick={()=>setEditing('')} disabled={blocks.length>=64}>New theme</button>
       {theme&&<><button onClick={()=>setEditing(theme.id)}>Edit theme</button><button disabled={busy||!theme.trackIds.length} onClick={()=>void ai.applyBlock(theme.id)}>Play this theme next</button></>}
-      <span>{theme?'Import destination: '+theme.name:'Import destination: All music'}</span>
+      <span>Browsing: <strong>{theme?.name || 'All music'}</strong> · Imports go here</span>
     </div>
     {ai.isActive&&<p role="status" className="theme-playback-status">Playing: {playing?.name||'All music'}{pending?' · Next theme: '+pending.name+' · after this song':''}</p>}
     {editing!==null&&<ThemeEditor id={editing} onClose={()=>setEditing(null)} onSaved={id=>{setBrowsing(id);refreshEditedTheme(id);}}/>}

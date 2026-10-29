@@ -1,0 +1,13 @@
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.default = void 0;
+var _playwright = _interopRequireDefault(require("./playwright.config"));
+function _interopRequireDefault(e) { return e && e.__esModule ? e : { default: e }; }
+var _default = exports.default = {
+  ..._playwright.default,
+  webServer: undefined
+};
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJ2ZXJzaW9uIjozLCJuYW1lcyI6WyJfcGxheXdyaWdodCIsIl9pbnRlcm9wUmVxdWlyZURlZmF1bHQiLCJyZXF1aXJlIiwiZSIsIl9fZXNNb2R1bGUiLCJkZWZhdWx0IiwiX2RlZmF1bHQiLCJleHBvcnRzIiwiY29uZmlnIiwid2ViU2VydmVyIiwidW5kZWZpbmVkIl0sInNvdXJjZXMiOlsicGxheXdyaWdodC5sb2NhbGNoZWNrLmNvbmZpZy50cyJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQgY29uZmlnIGZyb20gXCIuL3BsYXl3cmlnaHQuY29uZmlnXCI7IGV4cG9ydCBkZWZhdWx0IHsgLi4uY29uZmlnLCB3ZWJTZXJ2ZXI6IHVuZGVmaW5lZCB9O1xyXG4iXSwibWFwcGluZ3MiOiI7Ozs7OztBQUFBLElBQUFBLFdBQUEsR0FBQUMsc0JBQUEsQ0FBQUMsT0FBQTtBQUF5QyxTQUFBRCx1QkFBQUUsQ0FBQSxXQUFBQSxDQUFBLElBQUFBLENBQUEsQ0FBQUMsVUFBQSxHQUFBRCxDQUFBLEtBQUFFLE9BQUEsRUFBQUYsQ0FBQTtBQUFBLElBQUFHLFFBQUEsR0FBQUMsT0FBQSxDQUFBRixPQUFBLEdBQWdCO0VBQUUsR0FBR0csbUJBQU07RUFBRUMsU0FBUyxFQUFFQztBQUFVLENBQUMiLCJpZ25vcmVMaXN0IjpbXX0=

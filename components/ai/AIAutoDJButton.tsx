@@ -1,18 +1,21 @@
 "use client";
 
 import { useAIDJStore } from "../../stores/aiDJStore";
+import { reasonMessage } from "../../lib/ai/contract";
 import { Bot, SkipForward, Loader2, Square } from "lucide-react";
 
 export default function AIAutoDJButton() {
   const {
     isActive, status, activate, deactivate, skipToNext, planSource,
-    djComment, setlist, currentIndex, errorMessage,
+    djComment, setlist, currentIndex, errorMessage, planReason, suspend,
     autoFXDrops, toggleAutoFXDrops, resume,
   } = useAIDJStore();
 
   const handleClick = () => {
     if (isActive) {
-      deactivate();
+      if (status === "analyzing") deactivate();
+      else if (["manual", "error"].includes(status)) resume();
+      else suspend();
       return;
     }
 
@@ -22,6 +25,7 @@ export default function AIAutoDJButton() {
 
   const isAnalyzing = status === "analyzing";
   const hasError = status === "error";
+  const paused = ["manual", "error"].includes(status);
 
   return (
     <div className="flex items-center gap-1.5">
@@ -32,18 +36,18 @@ export default function AIAutoDJButton() {
         aria-label={isAnalyzing ? "Cancel preparation" : undefined}
         className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-mono font-black tracking-wider rounded-lg border cursor-pointer uppercase transition-all disabled:cursor-wait relative overflow-hidden"
         style={{
-          borderColor: isActive
+          borderColor: isActive && !paused
             ? "#00ff88"
             : hasError
               ? "#ff3355"
               : "#ff6b0070",
-          color: isActive ? "#00ff88" : hasError ? "#ff3355" : "#ff6b00",
-          backgroundColor: isActive
+          color: isActive && !paused ? "#00ff88" : hasError ? "#ff3355" : "#ff6b00",
+          backgroundColor: isActive && !paused
             ? "#00ff8818"
             : hasError
               ? "#ff335518"
               : "#ff6b0018",
-          boxShadow: isActive
+          boxShadow: isActive && !paused
             ? "0 0 20px rgba(0,255,136,0.35)"
             : hasError
               ? "0 0 12px rgba(255,51,85,0.3)"
@@ -51,14 +55,14 @@ export default function AIAutoDJButton() {
         }}
         title={
           isActive
-            ? `AI DJ Active — ${djComment || "Mixing..."}`
+            ? (errorMessage || (planSource === "local" ? reasonMessage(planReason || undefined) : djComment) || "Auto-DJ active")
             : hasError
               ? errorMessage
               : "Start an automatic party with your local library"
         }
       >
         {/* Animated background pulse when active */}
-        {isActive && (
+        {isActive && !paused && (
           <div
             className="absolute inset-0 animate-pulse opacity-20 rounded-lg"
             style={{ background: "linear-gradient(45deg, #00ff8830, transparent, #00ff8830)" }}
@@ -80,11 +84,11 @@ export default function AIAutoDJButton() {
             : "AI DJ"}
       </button>
 
-      {isActive && ["manual", "error"].includes(status) && <button onClick={resume} className="min-h-10 px-3 rounded-lg border border-cyan-500 text-cyan-300 text-xs">Resume Auto-DJ</button>}
+      {isActive && paused && errorMessage && <span role="status" className="text-xs text-amber-300">{errorMessage}</span>}
       {/* Auto FX Drops toggle button */}
       {isActive && (
         <button
-          onClick={toggleAutoFXDrops}
+          onClick={toggleAutoFXDrops} aria-pressed={autoFXDrops}
           style={{
             borderColor: autoFXDrops ? "#ff0077" : "#2a2a3d",
             color: autoFXDrops ? "#ff0077" : "#777790",
@@ -95,7 +99,7 @@ export default function AIAutoDJButton() {
           title="Auto FX Drops: trigger risers and sub drops during AI transitions"
         >
           <span>⚡</span>
-          <span>DROPS</span>
+          <span>DROPS {autoFXDrops ? "ON" : "OFF"}</span>
         </button>
       )}
 

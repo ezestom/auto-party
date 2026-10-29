@@ -118,7 +118,7 @@ export default function AIPointer({ onLibraryChange, returnRef }: Props) {
       releaseLibrary();
       if (elapsed < 4500) { hide(); return; }
       if (elapsed < 5700) {
-        const deck = document.querySelector<HTMLElement>('#console-panel-' + pending.deck);
+        const deck = document.querySelector<HTMLElement>('#console-panel-' + pending.deck + ' > .deck-panel');
         const visibleDeck = deck?.getBoundingClientRect().width ? deck : document.querySelector<HTMLElement>(".party-queue");
         pointAt(visibleDeck, "Next track prepared for deck " + pending.deck); return;
       }

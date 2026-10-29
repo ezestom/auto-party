@@ -31,6 +31,7 @@ export default function PartyPanel() {
   const togglePlayback = async () => {
     setMessage("");
     if (ai.status === "analyzing") { ai.deactivate(); return; }
+    if (ai.isActive && ["manual", "error"].includes(ai.status)) { ai.resume(); return; }
     try {
       await getAudioEngine().resume();
       if (playing) {
@@ -59,10 +60,10 @@ export default function PartyPanel() {
         {ai.planSource === "local" && ai.planReason && <p>{reasonMessage(ai.planReason)}</p>}
         <button className="party-secondary" onClick={() => connection.setShowModal(true)}>View AI connection</button>
       </div>
-      {ai.isActive && ["manual", "error"].includes(ai.status) && <button className="party-primary mb-3" onClick={ai.resume}>Resume Auto-DJ</button>}
+
       <div className="party-actions">
         <button onClick={() => input.current?.click()} disabled={importing} className="party-secondary">Add music</button>
-        <button onClick={togglePlayback} disabled={importing || (ai.status !== "analyzing" && !playing && !tracks.length)} className="party-primary">{ai.status === "analyzing" ? "Cancel preparation" : playing ? "Pause party" : "Start party"}</button>
+        <button onClick={togglePlayback} disabled={importing || (ai.status !== "analyzing" && !playing && !tracks.length)} className="party-primary">{ai.status === "analyzing" ? "Cancel preparation" : ai.isActive && ["manual", "error"].includes(ai.status) ? "Resume Auto-DJ" : playing ? "Pause party" : "Start party"}</button>
         <button onClick={ai.skipToNext} disabled={!ai.isActive || ai.status !== "mixing" || ai.currentIndex >= ai.setlist.length - 1} className="party-secondary">Next song</button>
       </div>
       <input ref={input} type="file" accept="audio/*" multiple hidden aria-label="Music files" onChange={async event => {

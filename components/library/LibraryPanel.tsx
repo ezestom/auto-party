@@ -7,7 +7,7 @@ import LibraryRow from "./LibraryRow";
 import VJLibraryRow from "./VJLibraryRow";
 import ThemeTabs from './ThemeTabs';
 import { usePartyBlockStore } from '../../stores/partyBlockStore';
-import { Search, ListFilter, ArrowUpDown, Upload, Loader2, Film } from "lucide-react";
+import { Search, ListFilter, ArrowUpDown, Upload, Loader2, Film, FolderPlus } from "lucide-react";
 
 import { mediaKind } from "../../lib/library/mediaFiles";
 
@@ -32,6 +32,36 @@ export default function LibraryPanel() {
   const [importMessage, setImportMessage] = useState("");
   const [activeMobileTab, setActiveMobileTab] = useState<"music" | "vj">("music");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const importButtonClass = "flex min-h-8 items-center gap-1.5 px-2.5 bg-[#121218] border border-[#34344c] rounded font-mono text-[10px] font-extrabold uppercase text-[#b8b8ca] hover:text-white hover:border-[#00d4ff] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0";
+
+  const importFolder = async (files: File[]) => {
+    if (usePartyBlockStore.getState().blocks.length >= 64) {
+      setImportMessage("Theme limit reached. Delete a theme before importing a folder."); return;
+    }
+    const audio = files.filter(file => mediaKind(file) === "audio");
+    if (!audio.length) { setImportMessage("No supported audio files found in this folder."); return; }
+    const name = (audio[0].webkitRelativePath.split("/")[0] || "Imported folder").slice(0, 60);
+    const selected = audio.slice(0, 200);
+    const { importTrack, setImportStatus } = useLibraryStore.getState();
+    const ids: string[] = [], failures: string[] = [];
+    setImportMessage("");
+    setImportStatus({ active: true, current: 0, total: selected.length, filename: "" });
+    try {
+      for (const [index, file] of selected.entries()) {
+        setImportStatus({ current: index + 1, filename: file.name });
+        try { ids.push((await importTrack(file)).id); } catch { failures.push(file.name); }
+      }
+      if (ids.length) {
+        const id = crypto.randomUUID();
+        usePartyBlockStore.getState().saveBlock({ id, name, trackIds: ids });
+        usePartyBlockStore.getState().setBrowsing(id);
+      }
+    } finally { setImportStatus({ active: false, current: 0, total: 0, filename: "" }); }
+    setImportMessage((ids.length ? `Created theme "${name}" with ${ids.length} songs.` : "No songs could be imported.") +
+      (audio.length > 200 ? ` ${audio.length - 200} songs were not imported: themes hold up to 200 songs.` : "") +
+      (failures.length ? ` Could not import: ${failures.join(", ")}.` : "") + " Choose another folder to create another theme.");
+  };
 
   const processFilesQueue = async (files: File[]) => {
     const destination=usePartyBlockStore.getState().browsingId;
@@ -116,6 +146,7 @@ export default function LibraryPanel() {
         </>
 
       {/* MOBILE TAB TOGGLE (< lg screens) */}
+      <input type="file" ref={element => { folderInputRef.current = element; element?.setAttribute("webkitdirectory", ""); }} multiple className="hidden" aria-label="Choose music folder" onChange={event => { const files = Array.from(event.target.files || []); event.target.value = ""; if (files.length) void importFolder(files); }} />
       <div className="library-media-tabs flex items-center justify-between gap-1 pb-1 mb-1 border-b border-[#1e1e2c] shrink-0">
         <div className="flex lg:hidden items-center gap-1.5">
           <button
@@ -143,13 +174,17 @@ export default function LibraryPanel() {
             <span>VJ VIDEO ({videos.length})</span>
           </button>
         </div>
+              <div className="flex items-center gap-2">
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-1 px-2 py-0.5 bg-[#121218] border border-[#222234] rounded font-mono text-[8px] text-[#9999b5] hover:text-white hover:border-[#00d4ff] transition-all cursor-pointer font-extrabold uppercase shrink-0"
+                disabled={importStatus.active}
+                className={importButtonClass}
               >
                 <Upload size={10} className="text-[#00d4ff]" />
                 Import files
               </button>
+              <button onClick={() => folderInputRef.current?.click()} disabled={importStatus.active} title="Create a theme from a music folder" className={importButtonClass}><FolderPlus size={10} className="text-[#00d4ff]" /> Import folder as theme</button>
+              </div>
       </div>
 
       {/* RESPONSIVE GRID CONTAINER: 1-Column on Mobile, 50/50 Split on Desktop (lg+) */}

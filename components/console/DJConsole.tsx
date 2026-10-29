@@ -11,8 +11,10 @@ import Laser from "../ui/Laser";
 import VJMiniPlayer from "../vj/VJMiniPlayer";
 import AIAutoDJButton from "../ai/AIAutoDJButton";
 import AIPointer from "../ai/AIPointer";
+import AutoDJSweep from "../ai/AutoDJSweep";
 import AIConnectionModal from "../ai/APIKeyModal";
 import { useAIConnectionStore } from "../../stores/aiConnectionStore";
+import { useAIDJStore } from "../../stores/aiDJStore";
 import SettingsModal from "../settings/SettingsModal";
 import { useDeckStore } from "../../stores/deckStore";
 import { useMixerStore } from "../../stores/mixerStore";
@@ -32,6 +34,7 @@ export default function DJConsole() {
     void useVJStore.getState().loadVideos();
   }, []);
   const [partyMode, setPartyMode] = useState(false);
+  const autoDJRunning = useAIDJStore(s => s.isActive && (s.status === "mixing" || s.status === "transitioning"));
   const deckA = useDeckStore((s) => s.decks.A);
   const deckB = useDeckStore((s) => s.decks.B);
 
@@ -222,6 +225,8 @@ export default function DJConsole() {
           background: "linear-gradient(180deg, #050508 0%, #08080d 100%)",
         }}
       >
+        <div aria-hidden="true" className="autodj-edge-glow" data-active={autoDJRunning} />
+        <AutoDJSweep />
         {/* Visual Ambient Laser Beam Effect */}
         <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden">
           <Laser
@@ -322,7 +327,7 @@ export default function DJConsole() {
             </button>
 
             {/* AI Auto DJ */}
-            <button aria-pressed={partyMode} onClick={() => setPartyMode(!partyMode)} className="px-3 py-2 border border-[#00ff88] rounded-lg text-[#00ff88] text-xs font-bold shrink-0">{partyMode ? "Manual console" : "Party mode"}</button>
+            <button aria-pressed={partyMode} onClick={() => setPartyMode(!partyMode)} className={`px-3 py-2 border rounded-lg text-xs font-bold shrink-0 ${partyMode ? "border-[#00ff88] text-[#00ff88] bg-[#00ff8818] shadow-[0_0_12px_#00ff8840]" : "border-[#34344c] text-[#aaaabd] bg-[#151520]"}`}>Party mode {partyMode ? "ON" : "OFF"}</button>
             {!partyMode && <AIAutoDJButton />}
 
             {/* VJ Mini Player */}

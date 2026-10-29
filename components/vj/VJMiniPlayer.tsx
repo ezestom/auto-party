@@ -45,10 +45,10 @@ export default memo(function VJMiniPlayer() {
   };
 
   return <>
-    <button id="vj-display-btn" onClick={openVisuals} aria-label="Open visuals" aria-expanded={open}
+    <button id="vj-display-btn" onClick={() => { if (open) { setOpen(false); projection.current?.close(); projection.current = null; } else openVisuals(); }} aria-label={open ? "Turn visuals off" : "Turn visuals on"} aria-expanded={open}
       title="Open DJ preview and TV / projector"
-      className="flex items-center gap-1 px-3 py-1.5 text-[10px] font-mono font-black rounded-lg border border-[#00d4ff70] text-[#00d4ff] bg-[#00d4ff18] cursor-pointer uppercase shrink-0">
-      <Tv size={12} /> Visuals
+      className={`flex items-center gap-1 px-3 py-1.5 text-[10px] font-mono font-black rounded-lg border cursor-pointer uppercase shrink-0 ${open ? "border-[#00d4ff] text-[#00d4ff] bg-[#00d4ff18]" : "border-[#34344c] text-[#aaaabd] bg-[#151520]"}`}>
+      <Tv size={12} /> Visuals {open ? "ON" : "OFF"}
     </button>
     {mounted && createPortal(
       <section ref={panel} aria-label="DJ video preview" className="vj-preview"

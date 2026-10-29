@@ -21,6 +21,15 @@ function deferred<T>() {
   return { promise, resolve };
 }
 describe("Auto-DJ session safety", () => {
+  test("resumes a paused loaded deck and preserves the queue", async () => {
+    await useAIDJStore.getState().activate();
+    useDeckStore.getState().setPlaying('A', false);
+    expect(useAIDJStore.getState().status).toBe('manual');
+    useAIDJStore.getState().resume();
+    expect(useDeckStore.getState().decks.A.isPlaying).toBe(true);
+    expect(useAIDJStore.getState().status).toBe('mixing');
+    expect(useAIDJStore.getState().setlist.map(item => item.trackId)).toEqual(['one', 'two']);
+  });
   test("presentation follows real preparation and clears when a DJ request replaces it", async () => {
     await useAIDJStore.getState().activate();
     await vi.advanceTimersByTimeAsync(500);

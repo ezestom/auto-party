@@ -402,7 +402,7 @@ export const useAIDJStore = create<AIDJStore>((set, get) => ({
         if (!get().isActive || !['manual', 'error'].includes(get().status))
             return;
         const decks = useDeckStore.getState().decks, focus = useMixerStore.getState().crossfader <= .5 ? 'A' : 'B', other = focus === 'A' ? 'B' : 'A';
-        const active = decks[focus].isPlaying && decks[focus].track ? decks[focus] : decks[other].isPlaying ? decks[other] : null;
+        const active = decks[focus].isPlaying && decks[focus].track ? decks[focus] : decks[other].isPlaying && decks[other].track ? decks[other] : decks[focus].track ? decks[focus] : null;
         if (!active?.track) {
             set({ errorMessage: 'Start a deck before resuming Auto-DJ.' });
             return;
@@ -413,6 +413,7 @@ export const useAIDJStore = create<AIDJStore>((set, get) => ({
             return;
         }
         useDeckStore.getState().setPlaying(selected === 'A' ? 'B' : 'A', false);
+        if (!active.isPlaying) useDeckStore.getState().setPlaying(selected, true);
         const ai = get(), id = active.track.id;
         set({ setlist: [...ai.setlist.slice(0, ai.currentIndex), itemFor(id), ...ai.setlist.slice(ai.currentIndex).filter(item => item.trackId !== id)], requestedIds: ai.requestedIds.filter(value => value !== id), status: 'mixing', errorMessage: '' });
     },

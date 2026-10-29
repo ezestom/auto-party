@@ -1,9 +1,10 @@
 import { test, expect } from "@playwright/test";
 
-test("local Auto-DJ starts from the playing song and stopping it leaves playback running", async ({ page }) => {
+test("the Auto-DJ glow follows running and paused states without stopping playback", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.route("https://generativelanguage.googleapis.com/**", route => route.abort());
   await page.goto("/");
+  await expect(page.locator(".autodj-edge-glow")).toHaveAttribute("data-active", "false");
   await page.locator("#library-toggle-btn").click();
   await expect(page.locator("#library-bottom-panel")).toBeVisible();
   // Fresh isolated browser context; this never touches the user's music database.
@@ -43,11 +44,13 @@ test("local Auto-DJ starts from the playing song and stopping it leaves playback
   await page.locator("#settings-btn").click();
   await page.getByRole("tab", { name: "Auto-DJ", exact: true }).click();
   await page.getByRole("button", { name: "View AI connection", exact: true }).click();
-  await page.getByRole("button", { name: "Usar automático local", exact: true }).click();
+  await page.getByRole("button", { name: "Use local Auto-DJ", exact: true }).click();
   await page.locator("#ai-autodj-btn").click();
   await expect(page.locator("#ai-autodj-btn")).toContainText("AUTO LOCAL");
+  await expect(page.locator(".autodj-edge-glow")).toHaveAttribute("data-active", "true");
   await expect(page.locator("#play-btn-A")).toContainText("PAUSE");
   await page.locator("#ai-autodj-btn").click();
-  await expect(page.locator("#ai-autodj-btn")).toHaveText("AI DJ");
+  await expect(page.locator("#ai-autodj-btn")).toContainText("AUTO PAUSED");
+  await expect(page.locator(".autodj-edge-glow")).toHaveAttribute("data-active", "false");
   await expect(page.locator("#play-btn-A")).toContainText("PAUSE");
 });
